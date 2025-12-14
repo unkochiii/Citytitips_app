@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
+import BookScreen from './BookScreen';
 import App from './index';
 import Profile from "./Profile"
 
@@ -13,7 +14,7 @@ const Layout = () => {
       {/* Contenu principal */}
       <View style={styles.content}>
         {activeTab === 'home' && <App/> }
-        {activeTab === 'search' && <Text>Page recherche</Text>}
+        {activeTab === 'search' && <BookScreen/>} 
         {activeTab === 'profile' && <Profile/>}
         {activeTab === 'chat' && <Text>Page de chat</Text> }
       </View>
