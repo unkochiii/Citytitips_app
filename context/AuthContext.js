@@ -1,111 +1,91 @@
-import React, { createContext, useState, useEffect, useContext } from 'react';
-import * as SecureStore from 'expo-secure-store';
-import { router } from 'expo-router';
-import api, { getUserProfile } from '../services/api';
-const AuthContext = createContext();
+// context/AuthContext.js
+import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import * as SecureStore from "expo-secure-store";
+import axios from "axios";
 
-export function AuthProvider({ children }) {
-    const [user, setUser] = useState(null);
-    const [token, setToken] = useState(null);
-    const [isLoading, setIsLoading] = useState(true);
+const API_URL = process.env.EXPO_PUBLIC_API_URL;
 
-    useEffect(() => {
-        loadStoredAuth();
-    }, []);
+export const AuthContext = createContext(null);
 
-    const loadStoredAuth = async () => {
-        try {
-            const storedToken = await SecureStore.getItemAsync('authToken');
-            const storedUserId = await SecureStore.getItemAsync('userId');
-
-            if (storedToken && storedUserId) {
-                setToken(storedToken);
-
-                // Récupère le profil complet
-                const profileData = await getUserProfile(storedUserId);
-                setUser({
-                    _id: storedUserId,
-                    username: profileData.account?.username,
-                    fullname: profileData.fullname,
-                    email: profileData.email,
-                });
-            }
-        } catch (error) {
-            console.log('Erreur chargement auth:', error);
-            await SecureStore.deleteItemAsync('authToken');
-            await SecureStore.deleteItemAsync('userId');
-        } finally {
-            setIsLoading(false);
-        }
+export function useAuth() {
+    const context = useContext(AuthContext);
+    if (!context) {
+        throw new Error("useAuth must be used within an AuthProvider");
+    }
+    return {
+        token: context.user?.token,
+        userId: context.user?._id,
+        username: context.user?.username,
+        isLoading: context.booting,
+        user: context.user,
+        login: context.login,
+        signup: context.signup,
+        logout: context.logout,
     };
-
-    const login = async (email, password) => {
-        try {
-            const { data } = await api.post('/auth/login', { email, password });
-
-            await SecureStore.setItemAsync('authToken', data.token);
-            await SecureStore.setItemAsync('userId', data._id);
-
-            setToken(data.token);
-            setUser({
-                _id: data._id,
-                username: data.account.username,
-            });
-
-            router.replace('/(tabs)');
-        } catch (error) {
-            throw new Error(error.response?.data?.message || 'Erreur de connexion');
-        }
-    };
-
-    const signup = async (userData) => {
-        try {
-            const payload = {
-                fullname: userData.fullname,
-                username: userData.username,
-                email: userData.email,
-                password: userData.password,
-                firstBookTitle: userData.firstBookTitle || '',
-                firstBookAuthor: userData.firstBookAuthor || '',
-                secondBookTitle: userData.secondBookTitle || '',
-                secondBookAuthor: userData.secondBookAuthor || '',
-                firstStyle: userData.favoriteGenres[0] || '',
-                secondStyle: userData.favoriteGenres[1] || '',
-                thirdStyle: userData.favoriteGenres[2] || '',
-                birth: userData.birth || '',
-                genre: userData.genre || '',
-            };
-
-            const { data } = await api.post('/auth/signup', payload);
-
-            await SecureStore.setItemAsync('authToken', data.user.token);
-            await SecureStore.setItemAsync('userId', data.user._id);
-
-            setToken(data.user.token);
-            setUser({
-                _id: data.user._id,
-                username: data.user.account.username,
-            });
-
-            router.replace('/(tabs)');
-        } catch (error) {
-            throw new Error(error.response?.data?.message || "Erreur d'inscription");
-        }
-    };
-
-    const logout = async () => {
-        await SecureStore.deleteItemAsync('authToken');
-        await SecureStore.deleteItemAsync('userId');
-        setToken(null);
-        setUser(null);
-        router.replace('/(auth)/login');
-    };
-
-    return (
-        <AuthContext.Provider value={{ user, token, isLoading, login, signup, logout }}>
-            {children}
-        </AuthContext.Provider>
-    );
 }
 
-export const useAuth = () => useContext(AuthContext);
+export function AuthProvider({ children }) {
+    const [user, setUser] = useState(null); // { _id, token, username }
+    const [booting, setBooting] = useState(true);
+
+    useEffect(() => {
+        (async () => {
+            const token = await SecureStore.getItemAsync("authToken");
+            const id = await SecureStore.getItemAsync("authUserId");
+            const username = await SecureStore.getItemAsync("authUsername");
+            if (token && id) setUser({ _id: id, token, username: username || "" });
+            setBooting(false);
+        })();
+    }, []);
+
+    const auth = useMemo(
+        () => ({
+            user,
+            booting,
+
+            async login(email, password) {
+                try {
+                    const res = await axios.post(`${API_URL}/auth/login`, { email, password });
+                    const data = res.data;
+
+                    await SecureStore.setItemAsync("authToken", data.token);
+                    await SecureStore.setItemAsync("authUserId", data._id);
+                    await SecureStore.setItemAsync("authUsername", data.account?.username || "");
+
+                    setUser({ _id: data._id, token: data.token, username: data.account?.username || "" });
+                    return data;
+                } catch (error) {
+                    const message = error.response?.data?.message || error.response?.data?.error || error.message || "Login failed";
+                    throw new Error(message);
+                }
+            },
+
+            async signup(payload) {
+                try {
+                    const res = await axios.post(`${API_URL}/auth/signup`, payload);
+                    const data = res.data; // { message, user: { _id, token, account: { username } } }
+
+                    await SecureStore.setItemAsync("authToken", data.user.token);
+                    await SecureStore.setItemAsync("authUserId", data.user._id);
+                    await SecureStore.setItemAsync("authUsername", data.user.account?.username || "");
+
+                    setUser({ _id: data.user._id, token: data.user.token, username: data.user.account?.username || "" });
+                    return data;
+                } catch (error) {
+                    const message = error.response?.data?.message || error.response?.data?.error || error.message || "Signup failed";
+                    throw new Error(message);
+                }
+            },
+
+            async logout() {
+                await SecureStore.deleteItemAsync("authToken");
+                await SecureStore.deleteItemAsync("authUserId");
+                await SecureStore.deleteItemAsync("authUsername");
+                setUser(null);
+            },
+        }),
+        [user, booting]
+    );
+
+    return <AuthContext.Provider value={auth}>{children}</AuthContext.Provider>;
+}

@@ -1,76 +1,65 @@
-import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
-import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
-import BookScreen from './BookScreen';
-import App from './index';
-import Profile from "./Profile"
+import React from "react";
+import { Tabs } from "expo-router";
+import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import { useAuth } from "../../context/AuthContext";
+import { View, ActivityIndicator } from "react-native";
+import { Redirect } from "expo-router";
 
+export default function TabsLayout() {
+    const { token, isLoading } = useAuth();
 
-const Layout = () => {
-  const [activeTab, setActiveTab] = useState('home');
+    if (isLoading) {
+        return (
+            <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
+                <ActivityIndicator size="large" />
+            </View>
+        );
+    }
 
-  return (
-    <View style={styles.container}>
-      {/* Contenu principal */}
-      <View style={styles.content}>
-        {activeTab === 'home' && <App/> }
-        {activeTab === 'search' && <BookScreen/>} 
-        {activeTab === 'profile' && <Profile/>}
-        {activeTab === 'chat' && <Text>Page de chat</Text> }
-      </View>
+    if (!token) {
+        return <Redirect href="/(auth)/login" />;
+    }
 
-      {/* Bottom Tabs */}
-      <View style={styles.bottomBar}>
-        <TouchableOpacity
-          onPress={() => setActiveTab('home')}
-          style={activeTab === 'home' ? styles.navItemActive : styles.navItem}
-        >
-          <MaterialCommunityIcons name="cards-heart" size={28} color="#D35400" />
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          onPress={() => setActiveTab('search')}
-          style={activeTab === 'search' ? styles.navItemActive : styles.navItem}
-        >
-          <MaterialCommunityIcons name="binoculars" size={28} color="#D35400" />
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          onPress={() => setActiveTab('profile')}
-          style={activeTab === 'profile' ? styles.navItemActive : styles.navItem}
-        >
-          <Ionicons name="person-circle-outline" size={32} color="#D35400" />
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          onPress={() => setActiveTab('chat')}
-          style={activeTab === 'chat' ? styles.navItemActive : styles.navItem}
-        >
-          <Ionicons name="chatbubbles-outline" size={28} color="#D35400" />
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
-};
-
-export default Layout;
-
-const styles = StyleSheet.create({
-  container: { flex: 1 },
-  content: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  bottomBar: {
-    height: 60,
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    alignItems: 'center',
-    borderTopWidth: 1,
-    borderColor: '#ddd',
-    backgroundColor: '#fff',
-  },
-  navItem: { alignItems: 'center', justifyContent: 'center' },
-  navItemActive: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    // effet visuel onglet actif
-  },
-});
+    return (
+        <Tabs screenOptions={{ headerShown: false, tabBarActiveTintColor: "#D35400" }}>
+            <Tabs.Screen
+                name="index"
+                options={{
+                    title: "Home",
+                    tabBarIcon: ({ color, size }) => (
+                        <MaterialCommunityIcons name="cards-heart" size={size} color={color} />
+                    ),
+                }}
+            />
+            <Tabs.Screen
+                name="search"
+                options={{
+                    title: "Search",
+                    tabBarIcon: ({ color, size }) => (
+                        <MaterialCommunityIcons name="binoculars" size={size} color={color} />
+                    ),
+                }}
+            />
+            <Tabs.Screen
+                name="profile"
+                options={{
+                    title: "Profile",
+                    tabBarIcon: ({ color, size }) => (
+                        <Ionicons name="person-circle-outline" size={size} color={color} />
+                    ),
+                }}
+            />
+            <Tabs.Screen
+                name="chat"
+                options={{
+                    title: "Chat",
+                    tabBarIcon: ({ color, size }) => (
+                        <Ionicons name="chatbubbles-outline" size={size} color={color} />
+                    ),
+                }}
+            />
+            {/* route interne */}
+            <Tabs.Screen name="book/[bookKey]" options={{ href: null }} />
+        </Tabs>
+    );
+}
