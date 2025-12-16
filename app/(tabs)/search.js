@@ -343,7 +343,7 @@ export default function Search() {
 }
 
 const styles = StyleSheet.create({
-    container: { flex: 1, padding: 16, backgroundColor: "#FAFAF0" },
+    container: { flex: 1, padding: 16, backgroundColor: "#FAFAF0" ,paddingTop: 70,},
     header: { flexDirection: "row", alignItems: "center", marginBottom: 12 },
     headerTitle: { fontSize: 18, marginLeft: 8, fontWeight: "600" },
 

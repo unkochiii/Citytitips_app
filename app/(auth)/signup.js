@@ -1,228 +1,219 @@
-import React, { useMemo, useState } from "react";
 import {
-    View,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    StyleSheet,
-    KeyboardAvoidingView,
-    Platform,
-    ScrollView,
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
+  ScrollView,
 } from "react-native";
-import { Link } from "expo-router";
+import { useState, useMemo } from "react";
 import { useAuth } from "../../context/AuthContext";
+import { useNavigation } from "@react-navigation/native";
 
 export default function SignUpScreen() {
-    const { signup, isLoading } = useAuth();
+  const { signup, isLoading } = useAuth();
+  const navigation = useNavigation();
 
-    const [fullname, setFullname] = useState("");
-    const [username, setUsername] = useState("");
-    const [email, setEmail] = useState("");
-    const [password, setPassword] = useState("");
+  const [fullname, setFullname] = useState("");
+  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [firstBook, setFirstBook] = useState("");
+  const [firstBookAuthor, setFirstBookAuthor] = useState("");
+  const [secondBook, setSecondBook] = useState("");
+  const [secondBookAuthor, setSecondBookAuthor] = useState("");
+  const [firstStyle, setFirstStyle] = useState("");
+  const [secondStyle, setSecondStyle] = useState("");
+  const [thirdStyle, setThirdStyle] = useState("");
+  const [birth, setBirth] = useState("");
+  const [genre, setGenre] = useState("");
+  const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
-    // optionnels (si ton backend les veut)
-    const [birth, setBirth] = useState(""); // ex: "1998-02-14"
-    const [genre, setGenre] = useState(""); // ex: "M" / "F" / ...
-    const [favoriteGenres, setFavoriteGenres] = useState([]); // si tu fais une sélection plus tard
+  const canSubmit = useMemo(() => {
+    return fullname && username && email.includes("@") && password.length >= 6;
+  }, [fullname, username, email, password]);
 
-    const [submitting, setSubmitting] = useState(false);
-    const [error, setError] = useState("");
+  const onSubmit = async () => {
+    setError("");
+    try {
+      setSubmitting(true);
+      await signup({
+        fullname,
+        username,
+        email,
+        password,
+        firstBookTitle: firstBook,
+        firstBookAuthor,
+        secondBookTitle: secondBook,
+        secondBookAuthor,
+        firstStyle,
+        secondStyle,
+        thirdStyle,
+        birth,
+        genre,
+      });
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
-    const canSubmit = useMemo(() => {
-        return (
-            fullname.trim().length >= 2 &&
-            username.trim().length >= 2 &&
-            email.trim().includes("@") &&
-            password.length >= 6
-        );
-    }, [fullname, username, email, password]);
+  const goToLogin = () => {
+    navigation.navigate("login");
+  };
 
-    const onSubmit = async () => {
-        setError("");
+  return (
+    <ScrollView contentContainerStyle={styles.container}>
+      <Text style={styles.title}>Sign Up</Text>
+      {!!error && <Text style={styles.error}>{error}</Text>}
 
-        // ✅ validations front (évite 403 inutiles)
-        if (!fullname.trim() || !username.trim() || !email.trim() || !password) {
-            setError("Please fill fullname, username, email and password.");
-            return;
-        }
-        if (!email.includes("@")) {
-            setError("Invalid email.");
-            return;
-        }
-        if (password.length < 6) {
-            setError("Password must be at least 6 characters.");
-            return;
-        }
+      <TextInput
+        style={styles.input}
+        placeholder="Full name"
+        value={fullname}
+        onChangeText={setFullname}
+      />
+      <TextInput
+        style={styles.input}
+        placeholder="Username"
+        value={username}
+        onChangeText={setUsername}
+      />
+      <TextInput
+        style={styles.input}
+        placeholder="Email"
+        value={email}
+        onChangeText={setEmail}
+        keyboardType="email-address"
+        autoCapitalize="none"
+      />
+      <TextInput
+        style={styles.input}
+        placeholder="Password"
+        secureTextEntry
+        value={password}
+        onChangeText={setPassword}
+      />
 
-        try {
-            setSubmitting(true);
+      <TextInput
+        style={styles.input}
+        placeholder="First Book Title"
+        value={firstBook}
+        onChangeText={setFirstBook}
+      />
+      <TextInput
+        style={styles.input}
+        placeholder="First Book Author"
+        value={firstBookAuthor}
+        onChangeText={setFirstBookAuthor}
+      />
+      <TextInput
+        style={styles.input}
+        placeholder="Second Book Title"
+        value={secondBook}
+        onChangeText={setSecondBook}
+      />
+      <TextInput
+        style={styles.input}
+        placeholder="Second Book Author"
+        value={secondBookAuthor}
+        onChangeText={setSecondBookAuthor}
+      />
 
-            await signup({
-                fullname: fullname.trim(),
-                username: username.trim(),
-                email: email.trim().toLowerCase(),
-                password,
+      <TextInput
+        style={styles.input}
+        placeholder="First Style"
+        value={firstStyle}
+        onChangeText={setFirstStyle}
+      />
+      <TextInput
+        style={styles.input}
+        placeholder="Second Style"
+        value={secondStyle}
+        onChangeText={setSecondStyle}
+      />
+      <TextInput
+        style={styles.input}
+        placeholder="Third Style"
+        value={thirdStyle}
+        onChangeText={setThirdStyle}
+      />
 
-                // champs optionnels (garde-les si ton backend les accepte)
-                firstBookTitle: "",
-                firstBookAuthor: "",
-                secondBookTitle: "",
-                secondBookAuthor: "",
+      <TextInput
+        style={styles.input}
+        placeholder="Birth"
+        value={birth}
+        onChangeText={setBirth}
+      />
+      <TextInput
+        style={styles.input}
+        placeholder="Genre"
+        value={genre}
+        onChangeText={setGenre}
+      />
 
-                // styles: ton AuthContext.signup() prend favoriteGenres[0..2]
-                favoriteGenres,
+      <TouchableOpacity
+        style={[
+          styles.btn,
+          (!canSubmit || submitting || isLoading) && { opacity: 0.7 },
+        ]}
+        onPress={onSubmit}
+        disabled={!canSubmit || submitting || isLoading}
+      >
+        <Text style={styles.btnText}>
+          {submitting || isLoading ? "Creating..." : "Create account"}
+        </Text>
+      </TouchableOpacity>
 
-                // optionnels
-                birth: birth.trim(),
-                genre: genre.trim(),
-            });
-        } catch (e) {
-            // ✅ affiche le message du backend (403)
-            setError(e?.message || "Signup failed.");
-        } finally {
-            setSubmitting(false);
-        }
-    };
-
-    return (
-        <KeyboardAvoidingView
-            style={styles.flex}
-            behavior={Platform.OS === "ios" ? "padding" : undefined}
-        >
-            <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
-                <Text style={styles.title}>Sign up</Text>
-
-                {!!error && <Text style={styles.error}>{error}</Text>}
-
-                <TextInput
-                    style={styles.input}
-                    placeholder="Full name"
-                    value={fullname}
-                    onChangeText={setFullname}
-                    autoCapitalize="words"
-                />
-
-                <TextInput
-                    style={styles.input}
-                    placeholder="Username"
-                    value={username}
-                    onChangeText={setUsername}
-                    autoCapitalize="none"
-                />
-
-                <TextInput
-                    style={styles.input}
-                    placeholder="Email"
-                    value={email}
-                    onChangeText={setEmail}
-                    autoCapitalize="none"
-                    keyboardType="email-address"
-                />
-
-                <TextInput
-                    style={styles.input}
-                    placeholder="Password (min 6 chars)"
-                    value={password}
-                    onChangeText={setPassword}
-                    autoCapitalize="none"
-                    secureTextEntry
-                />
-
-                {/* Optionnels - tu peux les enlever si tu veux */}
-                <TextInput
-                    style={styles.input}
-                    placeholder="Birth (YYYY-MM-DD) - optional"
-                    value={birth}
-                    onChangeText={setBirth}
-                    autoCapitalize="none"
-                />
-
-                <TextInput
-                    style={styles.input}
-                    placeholder="Genre (M/F/...) - optional"
-                    value={genre}
-                    onChangeText={setGenre}
-                    autoCapitalize="none"
-                />
-
-                <TouchableOpacity
-                    onPress={onSubmit}
-                    disabled={!canSubmit || submitting || isLoading}
-                    style={[styles.button, (!canSubmit || submitting || isLoading) && styles.buttonDisabled]}
-                >
-                    <Text style={styles.buttonText}>
-                        {submitting || isLoading ? "Creating..." : "Create account"}
-                    </Text>
-                </TouchableOpacity>
-
-                <Text style={styles.footer}>
-                    Already have an account?{" "}
-                    <Link href="/(auth)/login" style={styles.link}>
-                        Login
-                    </Link>
-                </Text>
-            </ScrollView>
-        </KeyboardAvoidingView>
-    );
+      <TouchableOpacity onPress={goToLogin}>
+        <Text style={styles.link}>Already have an account? Login</Text>
+      </TouchableOpacity>
+    </ScrollView>
+  );
 }
 
 const styles = StyleSheet.create({
-    flex: { flex: 1, backgroundColor: "#FAFAF0" },
-    container: {
-        flexGrow: 1,
-        paddingHorizontal: 18,
-        paddingTop: 80,
-        paddingBottom: 40,
-        backgroundColor: "#FAFAF0",
-    },
-    title: {
-        fontSize: 34,
-        fontWeight: "700",
-        textAlign: "center",
-        marginBottom: 14,
-        color: "#111",
-    },
-    error: {
-        textAlign: "center",
-        color: "#C0392B",
-        marginBottom: 12,
-        fontSize: 13,
-        fontWeight: "600",
-    },
-    input: {
-        height: 54,
-        borderWidth: 1,
-        borderColor: "#E5E5E5",
-        backgroundColor: "#fff",
-        borderRadius: 14,
-        paddingHorizontal: 14,
-        marginBottom: 14,
-        fontSize: 15,
-    },
-    button: {
-        height: 56,
-        borderRadius: 18,
-        backgroundColor: "#000",
-        alignItems: "center",
-        justifyContent: "center",
-        marginTop: 8,
-    },
-    buttonDisabled: {
-        opacity: 0.5,
-    },
-    buttonText: {
-        color: "#fff",
-        fontWeight: "700",
-        fontSize: 16,
-    },
-    footer: {
-        marginTop: 16,
-        textAlign: "center",
-        color: "#444",
-        fontSize: 13,
-    },
-    link: {
-        color: "#D35400",
-        fontWeight: "700",
-    },
+  container: {
+    padding: 20,
+    justifyContent: "center",
+    backgroundColor: "#FAFAF0",
+  },
+  title: {
+    fontSize: 22,
+    fontWeight: "700",
+    marginBottom: 16,
+    textAlign: "center",
+  },
+  input: {
+    backgroundColor: "white",
+    borderWidth: 1,
+    borderColor: "#ddd",
+    padding: 12,
+    borderRadius: 10,
+    marginBottom: 10,
+  },
+  btn: {
+    backgroundColor: "#000",
+    padding: 12,
+    borderRadius: 12,
+    alignItems: "center",
+    marginTop: 10,
+  },
+  btnText: {
+    color: "white",
+    fontWeight: "700",
+  },
+  error: {
+    color: "crimson",
+    textAlign: "center",
+    marginBottom: 10,
+  },
+  link: {
+    textAlign: "center",
+    marginTop: 12,
+    color: "#D35400",
+    fontWeight: "600",
+  },
 });
