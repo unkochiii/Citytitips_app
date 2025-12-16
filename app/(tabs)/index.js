@@ -276,7 +276,7 @@ export default function HomeTab() {
 }
 
 const styles = StyleSheet.create({
-    container: { flex: 1, padding: 16, backgroundColor: "#FAFAF0" },
+    container: { flex: 1, padding: 16, backgroundColor: "#FAFAF0",paddingTop: 70 },
     center: { alignItems: "center", justifyContent: "center" },
 
     headerRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },

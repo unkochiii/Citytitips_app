@@ -1,62 +1,114 @@
-import React, { useState } from "react";
-import { View, Text, TextInput, TouchableOpacity, StyleSheet } from "react-native";
-import { Link } from "expo-router";
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
+} from "react-native";
+import { useState } from "react";
 import { useAuth } from "../../context/AuthContext";
+import { useNavigation } from "@react-navigation/native";
 
-export default function LogInScreen() {
-    const { login, isLoading } = useAuth();
-    const [email, setEmail] = useState("");
-    const [password, setPassword] = useState("");
-    const [error, setError] = useState("");
+export default function LoginScreen() {
+  const { login, isLoading } = useAuth();
+  const navigation = useNavigation();
 
-    const onSubmit = async () => {
-        setError("");
-        try {
-            await login(email.trim(), password);
-        } catch (e) {
-            setError(e.message || "Erreur de connexion");
-        }
-    };
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
 
-    return (
-        <View style={styles.container}>
-            <Text style={styles.title}>Login</Text>
+  const onSubmit = async () => {
+    try {
+      await login(email, password);
+    } catch (e) {
+      setError(e.message);
+    }
+  };
 
-            {!!error && <Text style={styles.error}>{error}</Text>}
+  const goToSignUp = () => {
+    navigation.navigate("signup"); 
+  };
 
-            <TextInput
-                style={styles.input}
-                placeholder="Email"
-                autoCapitalize="none"
-                value={email}
-                onChangeText={setEmail}
-            />
+  return (
+    <View style={styles.container}>
+      <Text style={styles.title}>Login</Text>
 
-            <TextInput
-                style={styles.input}
-                placeholder="Password"
-                secureTextEntry
-                value={password}
-                onChangeText={setPassword}
-            />
+      {!!error && <Text style={styles.error}>{error}</Text>}
 
-            <TouchableOpacity style={styles.btn} onPress={onSubmit} disabled={isLoading}>
-                <Text style={styles.btnText}>{isLoading ? "..." : "Sign in"}</Text>
-            </TouchableOpacity>
+      <TextInput
+        style={styles.input}
+        placeholder="Email"
+        value={email}
+        onChangeText={setEmail}
+        keyboardType="email-address"
+        autoCapitalize="none"
+      />
+      <TextInput
+        style={styles.input}
+        placeholder="Password"
+        secureTextEntry
+        value={password}
+        onChangeText={setPassword}
+      />
 
-            <Link href="/(auth)/signup" style={styles.link}>
-                No account? Create one
-            </Link>
-        </View>
-    );
+      <TouchableOpacity
+        style={[styles.btn, isLoading && { opacity: 0.7 }]}
+        onPress={onSubmit}
+        disabled={isLoading}
+      >
+        <Text style={styles.btnText}>
+          {isLoading ? "Loading..." : "Sign in"}
+        </Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity onPress={goToSignUp}>
+        <Text style={styles.link}>Don't have an account? Sign up</Text>
+      </TouchableOpacity>
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({
-    container: { flex: 1, padding: 20, justifyContent: "center", backgroundColor: "#FAFAF0" },
-    title: { fontSize: 22, fontWeight: "700", marginBottom: 16, textAlign: "center" },
-    input: { backgroundColor: "white", borderWidth: 1, borderColor: "#ddd", padding: 12, borderRadius: 10, marginBottom: 10 },
-    btn: { backgroundColor: "#000", padding: 12, borderRadius: 12, alignItems: "center", marginTop: 6 },
-    btnText: { color: "white", fontWeight: "700" },
-    link: { textAlign: "center", marginTop: 12, color: "#D35400", fontWeight: "600" },
-    error: { color: "crimson", textAlign: "center", marginBottom: 10 },
+  container: {
+    flex: 1,
+    padding: 20,
+    justifyContent: "center",
+    backgroundColor: "#FAFAF0",
+  },
+  title: {
+    fontSize: 22,
+    fontWeight: "700",
+    marginBottom: 16,
+    textAlign: "center",
+  },
+  input: {
+    backgroundColor: "white",
+    borderWidth: 1,
+    borderColor: "#ddd",
+    padding: 12,
+    borderRadius: 10,
+    marginBottom: 10,
+  },
+  btn: {
+    backgroundColor: "#000",
+    padding: 12,
+    borderRadius: 12,
+    alignItems: "center",
+    marginTop: 6,
+  },
+  btnText: {
+    color: "white",
+    fontWeight: "700",
+  },
+  error: {
+    color: "crimson",
+    textAlign: "center",
+    marginBottom: 10,
+  },
+  link: {
+    textAlign: "center",
+    marginTop: 12,
+    color: "#D35400",
+    fontWeight: "600",
+  },
 });

@@ -2,7 +2,7 @@
 import axios from "axios";
 import * as SecureStore from "expo-secure-store";
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL; // ex: https://xxx.code.run
+const API_URL = "https://site--en2versv0-backend--ftkq8hkxyc7l.code.run";
 
 const api = axios.create({
     baseURL: API_URL,
