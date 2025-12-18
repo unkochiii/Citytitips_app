@@ -1,17 +1,18 @@
+import React, { useState } from "react";
 import {
   View,
   Text,
   TextInput,
   TouchableOpacity,
   StyleSheet,
+  KeyboardAvoidingView,
+  Platform,
 } from "react-native";
-import { useState } from "react";
+import { router } from "expo-router";
 import { useAuth } from "../../context/AuthContext";
-import { useNavigation } from "@react-navigation/native";
 
 export default function LoginScreen() {
   const { login, isLoading } = useAuth();
-  const navigation = useNavigation();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -19,52 +20,73 @@ export default function LoginScreen() {
 
   const onSubmit = async () => {
     try {
-      await login(email, password);
+      setError("");
+      if (!email.trim() || !password) {
+        setError("Email and password are required.");
+        return;
+      }
+      await login(email.trim().toLowerCase(), password);
+      // si ton app a une protection de routes, ça peut rediriger tout seul.
+      // sinon, tu peux forcer :
+      router.replace("/(tabs)");
     } catch (e) {
-      setError(e.message);
+      const msg = e?.response?.data?.message || e?.message || "Login failed";
+      setError(msg);
     }
   };
 
   const goToSignUp = () => {
-    navigation.navigate("signup"); 
+    router.push("/(auth)/signup");
   };
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Login</Text>
+    <KeyboardAvoidingView
+      style={{ flex: 1, backgroundColor: "#FFFFFF" }}
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
+    >
+      <View style={styles.container}>
+        <Text style={styles.title}>Login</Text>
 
-      {!!error && <Text style={styles.error}>{error}</Text>}
+        {!!error && <Text style={styles.error}>{error}</Text>}
 
-      <TextInput
-        style={styles.input}
-        placeholder="Email"
-        value={email}
-        onChangeText={setEmail}
-        keyboardType="email-address"
-        autoCapitalize="none"
-      />
-      <TextInput
-        style={styles.input}
-        placeholder="Password"
-        secureTextEntry
-        value={password}
-        onChangeText={setPassword}
-      />
+        <TextInput
+          style={styles.input}
+          placeholder="Email"
+          placeholderTextColor="rgba(0,0,0,0.35)"
+          value={email}
+          onChangeText={setEmail}
+          keyboardType="email-address"
+          autoCapitalize="none"
+          autoCorrect={false}
+          textContentType="username"
+        />
 
-      <TouchableOpacity
-        style={[styles.btn, isLoading && { opacity: 0.7 }]}
-        onPress={onSubmit}
-        disabled={isLoading}
-      >
-        <Text style={styles.btnText}>
-          {isLoading ? "Loading..." : "Sign in"}
-        </Text>
-      </TouchableOpacity>
+        <TextInput
+          style={styles.input}
+          placeholder="Password"
+          placeholderTextColor="rgba(0,0,0,0.35)"
+          secureTextEntry
+          value={password}
+          onChangeText={setPassword}
+          autoCapitalize="none"
+          autoCorrect={false}
+          textContentType="password"
+        />
 
-      <TouchableOpacity onPress={goToSignUp}>
-        <Text style={styles.link}>Don't have an account? Sign up</Text>
-      </TouchableOpacity>
-    </View>
+        <TouchableOpacity
+          style={[styles.btn, (isLoading || !email || !password) && { opacity: 0.7 }]}
+          onPress={onSubmit}
+          disabled={isLoading}
+          activeOpacity={0.85}
+        >
+          <Text style={styles.btnText}>{isLoading ? "Loading..." : "Sign in"}</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity onPress={goToSignUp} activeOpacity={0.85}>
+          <Text style={styles.link}>Don't have an account? Sign up</Text>
+        </TouchableOpacity>
+      </View>
+    </KeyboardAvoidingView>
   );
 }
 
