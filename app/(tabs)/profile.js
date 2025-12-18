@@ -8,13 +8,15 @@ import {
 } from "react-native";
 import { useEffect, useState } from "react";
 import axios from "axios";
-import AntDesign from "@expo/vector-icons/AntDesign";
+import Ionicons from "@expo/vector-icons/Ionicons";
 import { useAuth } from "../../context/AuthContext";
+import { useRouter } from "expo-router";
 
 const Profile = () => {
-  const { user, token } = useAuth(); // Récupère l'id et token dynamiquement
+  const { user, token, logout } = useAuth(); // Récupère l'id le token et le logout dynamiquement
   const [data, setData] = useState(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const router=useRouter()
 
   useEffect(() => {
     const fetchData = async () => {
@@ -43,69 +45,95 @@ const Profile = () => {
   const profile = data.user;
 
   return (
-    <ScrollView style={styles.container}>
-      {/* MENU */}
-      <TouchableOpacity
-        style={styles.modifyProfile}
-        onPress={() => setMenuOpen(!menuOpen)}
-      >
-        <AntDesign name="plus" size={24} color="black" />
-      </TouchableOpacity>
+    <View style={{ flex: 1 }}>
+      {/* OVERLAY */}
+      {menuOpen && (
+        <TouchableOpacity
+          style={styles.overlay}
+          activeOpacity={1}
+          onPress={() => setMenuOpen(false)}
+        />
+      )}
 
+      {/* MENU */}
       {menuOpen && (
         <View style={styles.menu}>
-          <TouchableOpacity style={styles.menuItem}>
-            <Text>Modify Profile</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.menuItem}>
+          <TouchableOpacity
+            style={styles.menuItem}
+            onPress={() => {
+              setMenuOpen(false);
+              router.push("/AccountSettings")
+            }}
+          >
             <Text>Account Settings</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.menuItem}>
+          <TouchableOpacity
+            style={styles.menuItem}
+            onPress={() => {
+              setMenuOpen(false);
+              logout();
+            }}
+          >
             <Text>Logout</Text>
           </TouchableOpacity>
         </View>
       )}
 
-      {/* AVATAR */}
-        {data?.user?.account?.avatar?.secure_url && (
-          <Image
-            source={{ uri: data.user.account.avatar.secure_url }}
-            style={styles.avatar}
+      <ScrollView style={styles.container}>
+        {/* BOUTON MENU */}
+        <TouchableOpacity
+          style={styles.modifyProfile}
+          onPress={() => setMenuOpen(true)}
+        >
+          <Ionicons
+            name="ellipsis-horizontal-circle-outline"
+            size={24}
+            color="black"
           />
-        )}
+        </TouchableOpacity>
 
+        {/* AVATAR */}
+        <Image
+          source={{
+            uri:
+              data?.user?.account?.avatar?.secure_url ||
+              "https://ui-avatars.com/api/?name=User",
+          }}
+          style={styles.avatar}
+        />
 
-      {/* NAME & HANDLE */}
-      <Text style={styles.username}>{profile.fullname}</Text>
-      <Text style={styles.handle}>@{profile.account.username}</Text>
+        {/* NAME & HANDLE */}
+        <Text style={styles.username}>{profile.fullname}</Text>
+        <Text style={styles.handle}>@{profile.account.username}</Text>
 
-      {/* BIO */}
+        {/* BIO */}
         <View style={styles.bio}>
           <Text style={styles.bioTitle}>Bio</Text>
           <Text style={styles.bioText}>Passionate reader ✨</Text>
         </View>
 
-      {/* FAVORITE BOOKS */}
-      {profile.favBooks?.length > 0 && (
-        <>
-          <Text style={styles.sectionTitle}>Favorite Books</Text>
-          <View style={styles.carousel}>
-            {profile.favBooks.map((book, index) => (
-              <View key={index} style={styles.bookCard}>
-                {book.coverUrl && (
-                  <Image
-                    source={{ uri: book.coverUrl }}
-                    style={styles.favBookPicture}
-                  />
-                )}
-                <Text style={styles.bookTitle}>{book.title}</Text>
-                <Text style={styles.bookAuthor}>{book.author_name}</Text>
-              </View>
-            ))}
-          </View>
-        </>
-      )}
-      {/* FAVORITE SUBJECTS */}
+        {/* FAVORITE BOOKS */}
+        {profile.favBooks?.length > 0 && (
+          <>
+            <Text style={styles.sectionTitle}>Favorite Books</Text>
+            <View style={styles.carousel}>
+              {profile.favBooks.map((book, index) => (
+                <View key={index} style={styles.bookCard}>
+                  {book.coverUrl && (
+                    <Image
+                      source={{ uri: book.coverUrl }}
+                      style={styles.favBookPicture}
+                    />
+                  )}
+                  <Text style={styles.bookTitle}>{book.title}</Text>
+                  <Text style={styles.bookAuthor}>{book.author_name}</Text>
+                </View>
+              ))}
+            </View>
+          </>
+        )}
+
+        {/* FAVORITE SUBJECTS */}
         <Text style={styles.sectionTitle}>Favorite Subjects</Text>
         <View style={styles.carousel}>
           {Object.entries(data?.user?.style || {}).map(([key, name]) => (
@@ -114,7 +142,8 @@ const Profile = () => {
             </View>
           ))}
         </View>
-    </ScrollView>
+      </ScrollView>
+    </View>
   );
 };
 
@@ -132,15 +161,26 @@ const styles = StyleSheet.create({
     position: "absolute",
     top: 70,
     right: 20,
-    backgroundColor: "white",
+    backgroundColor: "#fff",
     borderRadius: 16,
     paddingVertical: 8,
+    zIndex: 100,
+    elevation: 20,
     shadowColor: "#000",
-    shadowOpacity: 0.1,
+    shadowOpacity: 0.15,
     shadowRadius: 20,
     shadowOffset: { width: 0, height: 10 },
-    elevation: 8,
   },
+  overlay: {
+    position: "absolute",
+    top: 0,
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: "transparent",
+    zIndex: 50,
+  },
+
   menuItem: { paddingHorizontal: 20, paddingVertical: 12 },
 
   avatar: {
@@ -152,7 +192,13 @@ const styles = StyleSheet.create({
     borderWidth: 4,
     borderColor: "#F8F8F8",
   },
-  username: { alignSelf: "center", fontSize: 24, fontWeight: "800", color: "#000", letterSpacing: -0.5 },
+  username: {
+    alignSelf: "center",
+    fontSize: 24,
+    fontWeight: "800",
+    color: "#000",
+    letterSpacing: -0.5,
+  },
   handle: {
     alignSelf: "center",
     fontSize: 15,
