@@ -180,9 +180,6 @@ OpenLibrary utilise des clés au format `/works/OL123456W`. Le projet fournit de
 
 Aucune procédure de test ou de linting n'est actuellement configurée dans le projet.
 
-## 📄 Licence
-
-[À définir]
 
 ## 👥 Auteurs
 
