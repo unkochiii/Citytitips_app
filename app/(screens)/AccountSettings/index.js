@@ -12,8 +12,8 @@ import {
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { router } from "expo-router";
 
-import api from "../../services/api";
-import { useAuth } from "../../context/AuthContext";
+import api from "../../../services/api";
+import { useAuth } from "../../../context/AuthContext";
 
 const SWIPE_THRESHOLD = 110;
 const SWIPE_OUT_DURATION = 220;
