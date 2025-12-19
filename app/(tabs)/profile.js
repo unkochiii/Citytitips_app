@@ -62,7 +62,7 @@ const Profile = () => {
             style={styles.menuItem}
             onPress={() => {
               setMenuOpen(false);
-              router.push("/AccountSettings")
+              router.push("/AccountSettings/Editprofile")
             }}
           >
             <Text>Account Settings</Text>
