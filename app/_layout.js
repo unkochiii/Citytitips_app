@@ -1,6 +1,8 @@
-import { Stack, useRouter, useSegments } from "expo-router";
+// app/_layout.js
+import { Slot, useRouter, useSegments } from "expo-router";
 import { AuthProvider, useAuth } from "../context/AuthContext";
 import { useEffect } from "react";
+import { View, ActivityIndicator } from "react-native";
 
 function AuthGate() {
   const { user, isLoading } = useAuth();
@@ -12,16 +14,26 @@ function AuthGate() {
 
     const inAuthGroup = segments[0] === "(auth)";
 
-    if (!user && !inAuthGroup) { // si on est pas connecté, on ne laisse pas l'accès aux tabs
+    if (!user && !inAuthGroup) {
       router.replace("/(auth)/login");
     }
 
-    if (user && inAuthGroup) { //Si on est connecté on laisse l'accès aux tabs
+    if (user && inAuthGroup) {
       router.replace("/(tabs)");
     }
   }, [user, isLoading, segments]);
 
-  return <Stack screenOptions={{ headerShown: false }} />;
+  // ✅ Affiche un loader pendant le chargement
+  if (isLoading) {
+    return (
+      <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
+        <ActivityIndicator size="large" color="#007bff" />
+      </View>
+    );
+  }
+
+  // ✅ Utilise Slot au lieu de Stack pour laisser les enfants gérer leur navigation
+  return <Slot />;
 }
 
 export default function RootLayout() {

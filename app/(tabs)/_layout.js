@@ -1,83 +1,58 @@
-import React from "react";
+// app/(tabs)/_layout.js
 import { Tabs } from "expo-router";
-import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
-import { useAuth } from "../../context/AuthContext";
-import { View, ActivityIndicator } from "react-native";
-import { Redirect } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
 
 export default function TabsLayout() {
-    const { token, isLoading } = useAuth();
-
-    if (isLoading) {
-        return (
-            <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
-                <ActivityIndicator size="large" />
-            </View>
-        );
-    }
-
-    if (!token) {
-        return <Redirect href="/(auth)/login" />;
-    }
-
-    return (
-        <Tabs screenOptions={{ 
-            headerShown: false, 
-            tabBarActiveTintColor: "#FF6B6B",
-            tabBarInactiveTintColor: "#999",
-            tabBarStyle: {
-                backgroundColor: "#FFFFFF",
-                borderTopWidth: 0,
-                elevation: 0,
-                shadowOpacity: 0.05,
-                shadowRadius: 10,
-                shadowOffset: { width: 0, height: -5 },
-                height: 60,
-                paddingBottom: 8,
-            },
-            tabBarLabelStyle: {
-                fontSize: 11,
-                fontWeight: "600",
-            },
-        }}>
-            <Tabs.Screen
-                name="index"
-                options={{
-                    title: "Home",
-                    tabBarIcon: ({ color, size }) => (
-                        <MaterialCommunityIcons name="cards-heart" size={size} color={color} />
-                    ),
-                }}
-            />
-            <Tabs.Screen
-                name="search"
-                options={{
-                    title: "Search",
-                    tabBarIcon: ({ color, size }) => (
-                        <MaterialCommunityIcons name="binoculars" size={size} color={color} />
-                    ),
-                }}
-            />
-            <Tabs.Screen
-                name="profile"
-                options={{
-                    title: "Profile",
-                    tabBarIcon: ({ color, size }) => (
-                        <Ionicons name="person-circle-outline" size={size} color={color} />
-                    ),
-                }}
-            />
-            <Tabs.Screen
-                name="chat"
-                options={{
-                    title: "Chat",
-                    tabBarIcon: ({ color, size }) => (
-                        <Ionicons name="chatbubbles-outline" size={size} color={color} />
-                    ),
-                }}
-            />
-            {/* route interne */}
-            <Tabs.Screen name="book/[bookKey]" options={{ href: null }} />
-        </Tabs>
-    );
+  return (
+    <Tabs
+      screenOptions={{
+        headerShown: false,
+        tabBarActiveTintColor: "#007bff",
+        tabBarInactiveTintColor: "#999",
+        tabBarStyle: {
+          backgroundColor: "#fff",
+          borderTopWidth: 1,
+          borderTopColor: "#eee",
+          height: 60,
+          paddingBottom: 8,
+          paddingTop: 8,
+        },
+      }}
+    >
+      <Tabs.Screen
+        name="index"
+        options={{
+          title: "Accueil",
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="home" size={size} color={color} />
+          ),
+        }}
+      />{" "}
+      <Tabs.Screen
+        name="publish"
+        options={{
+          title: "Publier",
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="add-circle" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="events"
+        options={{
+          title: "Événements",
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="calendar" size={size} color={color} />
+          ),
+        }}
+      />
+      {/* ✅ Cache la page post/[id] de la tab bar */}
+      <Tabs.Screen
+        name="post/[id]"
+        options={{
+          href: null, // ← Cache de la tab bar
+        }}
+      />
+    </Tabs>
+  );
 }

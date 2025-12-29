@@ -1,146 +1,85 @@
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
-import * as SecureStore from "expo-secure-store";
-import axios from "axios";
+// context/AuthContext.js
+import { createContext, useContext, useState, useEffect } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
-const API_URL = "https://site--en2versv0-backend--ftkq8hkxyc7l.code.run";
+const AuthContext = createContext();
 
-export const AuthContext = createContext(null);
-
-const toStr = (v) => (v == null ? "" : typeof v === "string" ? v : String(v));
-const first = (...vals) => vals.find((v) => v != null && v !== "");
-
-const extractAuth = (raw) => {
-  // raw = res.data
-  const data = raw?.data ?? raw;
-
-  const token = toStr(
-    first(
-      data?.token,
-      data?.authToken,
-      data?.accessToken,
-      data?.jwt,
-      data?.user?.token,
-      data?.user?.authToken,
-      data?.user?.accessToken,
-      data?.user?.jwt,
-      data?.result?.token,
-      data?.result?.authToken,
-      data?.result?.accessToken
-    )
-  );
-
-  const id = toStr(
-    first(
-      data?._id,
-      data?.id,
-      data?.userId,
-      data?.accountId,
-      data?.user?._id,
-      data?.user?.id,
-      data?.user?.userId,
-      data?.result?._id,
-      data?.result?.id
-    )
-  );
-
-  const username = toStr(
-    first(
-      data?.account?.username,
-      data?.user?.account?.username,
-      data?.user?.username,
-      data?.username,
-      data?.result?.account?.username,
-      data?.result?.username
-    )
-  );
-
-  return { token, id, username, raw: data };
-};
-
-export function useAuth() {
-  const context = useContext(AuthContext);
-  if (!context) throw new Error("useAuth must be used within an AuthProvider");
-
-  return {
-    user: context.user,
-    token: context.user?.token,
-    isLoading: context.booting,
-    login: context.login,
-    signup: context.signup,
-    logout: context.logout,
-  };
-}
-
-export function AuthProvider({ children }) {
+export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
-  const [booting, setBooting] = useState(true);
+  const [token, setToken] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    (async () => {
+    const loadUser = async () => {
       try {
-        const token = await SecureStore.getItemAsync("authToken"); // string
-        const id = await SecureStore.getItemAsync("authUserId"); // string
-        const username = await SecureStore.getItemAsync("authUsername"); // string
+        const storedToken = await AsyncStorage.getItem("token");
+        const storedUser = await AsyncStorage.getItem("user");
 
-        if (token && id) setUser({ _id: id, token, username: username || "" });
+        if (storedToken && storedUser) {
+          setToken(storedToken);
+          setUser(JSON.parse(storedUser));
+        }
+      } catch (error) {
+        console.log("Erreur chargement user:", error);
       } finally {
-        setBooting(false);
+        setIsLoading(false);
       }
-    })();
+    };
+
+    loadUser();
   }, []);
 
-  const auth = useMemo(
-    () => ({
-      user,
-      booting,
+  // ✅ CORRECTION : Adapter à la vraie structure de l'API
+  const login = async (userData) => {
+    try {
+      console.log("=== DONNÉES REÇUES DE L'API ===");
+      console.log(JSON.stringify(userData, null, 2));
 
-      async login(email, password) {
-        const res = await axios.post(`${API_URL}/auth/login`, { email, password });
+      const newToken = userData.token;
 
-        // DEBUG (enlève après)
-        console.log("LOGIN RES.DATA =", JSON.stringify(res.data, null, 2));
+      // ✅ Les données sont dans userData.user, pas directement dans userData
+      const newUser = {
+        _id: userData.user._id,
+        username: userData.user.username,
+        avatar: userData.user.avatar, // { secure_url, public_id }
+        role: userData.user.role,
+        city: userData.user.city,
+      };
 
-        const { token, id, username } = extractAuth(res.data);
+      console.log("=== USER À SAUVEGARDER ===");
+      console.log(JSON.stringify(newUser, null, 2));
 
-        if (!token || !id) {
-          throw new Error("Invalid login response (token/id missing)");
-        }
+      await AsyncStorage.setItem("token", newToken);
+      await AsyncStorage.setItem("user", JSON.stringify(newUser));
+      setToken(newToken);
+      setUser(newUser);
+    } catch (error) {
+      console.log("Erreur sauvegarde:", error);
+    }
+  };
 
-        await SecureStore.setItemAsync("authToken", token);
-        await SecureStore.setItemAsync("authUserId", id);
-        await SecureStore.setItemAsync("authUsername", username);
+  const logout = async () => {
+    try {
+      await AsyncStorage.removeItem("token");
+      await AsyncStorage.removeItem("user");
+      setToken(null);
+      setUser(null);
+    } catch (error) {
+      console.log("Erreur logout:", error);
+    }
+  };
 
-        setUser({ _id: id, token, username });
-      },
-
-      async signup(payload) {
-        const res = await axios.post(`${API_URL}/auth/signup`, payload);
-
-        // DEBUG (enlève après)
-        console.log("SIGNUP RES.DATA =", JSON.stringify(res.data, null, 2));
-
-        const { token, id, username } = extractAuth(res.data);
-
-        if (!token || !id) {
-          throw new Error("Invalid signup response (token/id missing)");
-        }
-
-        await SecureStore.setItemAsync("authToken", token);
-        await SecureStore.setItemAsync("authUserId", id);
-        await SecureStore.setItemAsync("authUsername", username);
-
-        setUser({ _id: id, token, username });
-      },
-
-      async logout() {
-        await SecureStore.deleteItemAsync("authToken");
-        await SecureStore.deleteItemAsync("authUserId");
-        await SecureStore.deleteItemAsync("authUsername");
-        setUser(null);
-      },
-    }),
-    [user, booting]
+  return (
+    <AuthContext.Provider value={{ user, token, isLoading, login, logout }}>
+      {children}
+    </AuthContext.Provider>
   );
+};
 
-  return <AuthContext.Provider value={auth}>{children}</AuthContext.Provider>;
-}
+export const useAuth = () => {
+  const context = useContext(AuthContext);
+  if (!context) {
+    throw new Error("useAuth doit être utilisé dans un AuthProvider");
+  }
+  return context;
+};

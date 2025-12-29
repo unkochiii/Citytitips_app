@@ -1,3 +1,4 @@
+// app/login.js
 import React, { useState } from "react";
 import {
   View,
@@ -5,145 +6,193 @@ import {
   TextInput,
   TouchableOpacity,
   StyleSheet,
+  ImageBackground,
   KeyboardAvoidingView,
   Platform,
 } from "react-native";
-import { router } from "expo-router";
+import axios from "axios";
+import { useRouter, useLocalSearchParams } from "expo-router";
 import { useAuth } from "../../context/AuthContext";
 
-export default function LoginScreen() {
-  const { login, isLoading } = useAuth();
+const Login = () => {
+  const router = useRouter();
+  const params = useLocalSearchParams();
+
+  const { login: loginUser } = useAuth();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
+  const [errorMessage, setErrorMessage] = useState("");
 
-  const onSubmit = async () => {
+  const handleSubmit = async () => {
     try {
-      setError("");
-      if (!email.trim() || !password) {
-        setError("Email and password are required.");
-        return;
+      if (email && email.length > 3 && password && password.length > 6) {
+        const response = await axios.post(
+          "https://api--tanjablabla--t4nqvl4d28d8.code.run/user/login",
+          { email, password }
+        );
+
+        console.log("Réponse login:", response.data);
+
+        if (response.data.token) {
+          // ✅ CORRECTION : Passer l'objet complet response.data
+          await loginUser(response.data);
+          setErrorMessage("");
+
+          console.log("Login réussi, redirection...");
+
+          if (params?.from) {
+            router.replace(params.from);
+          } else {
+            router.replace("/");
+          }
+        } else {
+          setErrorMessage("Un problème est survenu");
+        }
+      } else {
+        setErrorMessage("Email pas au bon format ou mot de passe trop court.");
       }
-      await login(email.trim().toLowerCase(), password);
-      // si ton app a une protection de routes, ça peut rediriger tout seul.
-      // sinon, tu peux forcer :
-      router.replace("/(tabs)");
-    } catch (e) {
-      const msg = e?.response?.data?.message || e?.message || "Login failed";
-      setError(msg);
+    } catch (error) {
+      console.log("Erreur login:", error);
+      if (error.response) {
+        setErrorMessage(error.response.data.message);
+      } else {
+        setErrorMessage("Erreur de connexion");
+      }
     }
   };
 
-  const goToSignUp = () => {
-    router.push("/(auth)/signup");
-  };
-
   return (
-    <KeyboardAvoidingView
-      style={{ flex: 1, backgroundColor: "#FFFFFF" }}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
+    <ImageBackground
+      source={require("../../assets/images/5992373_1.jpg")}
+      style={styles.background}
+      resizeMode="repeat"
     >
-      <View style={styles.container}>
-        <Text style={styles.title}>Login</Text>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        style={styles.container}
+      >
+        <View style={styles.card}>
+          <Text style={styles.title}>Se connecter</Text>
 
-        {!!error && <Text style={styles.error}>{error}</Text>}
+          <View style={styles.form}>
+            <TextInput
+              style={styles.input}
+              placeholder="Email"
+              placeholderTextColor="#999"
+              value={email}
+              onChangeText={setEmail}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
 
-        <TextInput
-          style={styles.input}
-          placeholder="Email"
-          placeholderTextColor="rgba(0,0,0,0.35)"
-          value={email}
-          onChangeText={setEmail}
-          keyboardType="email-address"
-          autoCapitalize="none"
-          autoCorrect={false}
-          textContentType="username"
-        />
+            {errorMessage ? (
+              <Text style={styles.error}>{errorMessage}</Text>
+            ) : null}
 
-        <TextInput
-          style={styles.input}
-          placeholder="Password"
-          placeholderTextColor="rgba(0,0,0,0.35)"
-          secureTextEntry
-          value={password}
-          onChangeText={setPassword}
-          autoCapitalize="none"
-          autoCorrect={false}
-          textContentType="password"
-        />
+            <TextInput
+              style={styles.input}
+              placeholder="Mot de passe"
+              placeholderTextColor="#999"
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry={true}
+              autoCapitalize="none"
+            />
 
-        <TouchableOpacity
-          style={[styles.btn, (isLoading || !email || !password) && { opacity: 0.7 }]}
-          onPress={onSubmit}
-          disabled={isLoading}
-          activeOpacity={0.85}
-        >
-          <Text style={styles.btnText}>{isLoading ? "Loading..." : "Sign in"}</Text>
-        </TouchableOpacity>
+            <TouchableOpacity style={styles.button} onPress={handleSubmit}>
+              <Text style={styles.buttonText}>Se connecter</Text>
+            </TouchableOpacity>
+          </View>
 
-        <TouchableOpacity onPress={goToSignUp} activeOpacity={0.85}>
-          <Text style={styles.link}>Don't have an account? Sign up</Text>
-        </TouchableOpacity>
-      </View>
-    </KeyboardAvoidingView>
+          <TouchableOpacity
+            onPress={() =>
+              router.push({
+                pathname: "/signup",
+                params: { from: params?.from },
+              })
+            }
+          >
+            <Text style={styles.link}>Pas de compte ? Inscris-toi</Text>
+          </TouchableOpacity>
+        </View>
+      </KeyboardAvoidingView>
+    </ImageBackground>
   );
-}
+};
 
 const styles = StyleSheet.create({
+  // ... (styles inchangés)
+  background: {
+    flex: 1,
+    width: "100%",
+    height: "100%",
+  },
   container: {
     flex: 1,
-    padding: 24,
     justifyContent: "center",
-    backgroundColor: "#FFFFFF",
+    alignItems: "center",
+    paddingHorizontal: 20,
+  },
+  card: {
+    backgroundColor: "white",
+    padding: 25,
+    borderRadius: 15,
+    alignItems: "center",
+    gap: 15,
+    width: "100%",
+    maxWidth: 400,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
   },
   title: {
-    fontSize: 36,
-    fontWeight: "800",
-    marginBottom: 40,
-    textAlign: "center",
-    color: "#000",
-    letterSpacing: -0.5,
+    fontSize: 24,
+    fontWeight: "bold",
+    fontStyle: "italic",
+  },
+  form: {
+    width: "100%",
+    gap: 10,
+    alignItems: "center",
   },
   input: {
-    backgroundColor: "#F8F8F8",
-    borderWidth: 0,
-    padding: 18,
-    borderRadius: 16,
-    marginBottom: 12,
+    width: "100%",
+    height: 50,
+    borderWidth: 1,
+    borderColor: "#ddd",
+    borderRadius: 8,
+    paddingHorizontal: 15,
     fontSize: 16,
-    color: "#000",
+    backgroundColor: "#fafafa",
   },
-  btn: {
-    backgroundColor: "#FF6B6B",
-    padding: 18,
-    borderRadius: 30,
+  button: {
+    backgroundColor: "#007bff",
+    paddingVertical: 12,
+    paddingHorizontal: 30,
+    borderRadius: 8,
+    width: "100%",
     alignItems: "center",
-    marginTop: 8,
-    shadowColor: "#FF6B6B",
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 8,
+    marginTop: 10,
   },
-  btnText: {
+  buttonText: {
     color: "white",
-    fontWeight: "800",
-    fontSize: 17,
-    letterSpacing: 0.5,
+    fontSize: 16,
+    fontWeight: "bold",
   },
   error: {
-    color: "#FF6B6B",
-    textAlign: "center",
-    marginBottom: 16,
+    color: "red",
     fontSize: 14,
-    fontWeight: "600",
+    textAlign: "center",
   },
   link: {
-    textAlign: "center",
-    marginTop: 20,
-    color: "#FF6B6B",
-    fontWeight: "700",
-    fontSize: 15,
+    color: "#007bff",
+    fontSize: 14,
+    textDecorationLine: "underline",
   },
 });
+
+export default Login;

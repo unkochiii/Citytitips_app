@@ -1,4 +1,4 @@
-// app/(tabs)/index.js
+// app/(tabs)/events.js
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
   View,
@@ -24,7 +24,7 @@ import { FontAwesome, Ionicons } from "@expo/vector-icons";
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const DRAWER_WIDTH = SCREEN_WIDTH * 0.75;
 
-export default function Home() {
+export default function Events() {
   const router = useRouter();
   const { token, user, logout } = useAuth();
 
@@ -37,9 +37,7 @@ export default function Home() {
   const [menuVisible, setMenuVisible] = useState(false);
   const [slideAnim] = useState(new Animated.Value(-DRAWER_WIDTH));
 
-  // ✅ CORRECTION : Adapter à la vraie structure
   const isAdmin = user?.role === "admin";
-  const userCity = user?.city || "";
 
   // ✅ Ouvrir le menu
   const openMenu = () => {
@@ -92,8 +90,11 @@ export default function Home() {
         }
       );
 
-      console.log("Nombre de posts:", response.data.posts?.length);
-      setData(response.data);
+      // ✅ Filtrer uniquement les events
+      const approvedEvents =
+        response.data.posts?.filter((post) => post.type === "event") || [];
+
+      setData({ posts: approvedEvents });
     } catch (error) {
       console.log(error);
     } finally {
@@ -107,49 +108,59 @@ export default function Home() {
     }
   }, [fetchData, token]);
 
+  // ✅ Pull to refresh
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     await fetchData();
     setRefreshing(false);
   }, [fetchData]);
 
+  // ✅ Filtrage des posts basé sur la recherche
   const filteredPosts = useMemo(() => {
     if (!data?.posts) return [];
+    if (!searchQuery.trim()) return data.posts;
 
-    let posts = [...data.posts];
+    const query = searchQuery.toLowerCase().trim();
 
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase().trim();
-      posts = posts.filter((post) => {
-        return (
-          post.titre?.toLowerCase().includes(query) ||
-          post.description?.toLowerCase().includes(query) ||
-          post.content?.toLowerCase().includes(query) ||
-          post.authorId?.account?.username?.toLowerCase().includes(query)
-        );
-      });
-    }
+    return data.posts.filter((post) => {
+      const titleMatch = post.titre?.toLowerCase().includes(query);
+      const descriptionMatch = post.description?.toLowerCase().includes(query);
+      const contentMatch = post.content?.toLowerCase().includes(query);
+      const lieuMatch = post.lieu?.toLowerCase().includes(query);
+      const authorMatch = post.authorId?.account?.username
+        ?.toLowerCase()
+        .includes(query);
+      const dateMatch = post.dateEvent
+        ? new Date(post.dateEvent).toLocaleDateString().includes(query)
+        : false;
 
-    posts.sort((a, b) => {
-      if (a.isPinned && !b.isPinned) return -1;
-      if (!a.isPinned && b.isPinned) return 1;
-      return new Date(b.createdAt) - new Date(a.createdAt);
+      return (
+        titleMatch ||
+        descriptionMatch ||
+        contentMatch ||
+        lieuMatch ||
+        authorMatch ||
+        dateMatch
+      );
     });
-
-    return posts;
   }, [data?.posts, searchQuery]);
 
+  // ✅ Fonction Like
   const handleLike = async (postId) => {
     try {
       const response = await axios.post(
         `https://api--tanjablabla--t4nqvl4d28d8.code.run/post/${postId}/toggle-like`,
         {},
-        { headers: { Authorization: `Bearer ${token}` } }
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
       );
 
-      setData((prev) => ({
-        ...prev,
-        posts: prev.posts.map((post) =>
+      setData((prevData) => ({
+        ...prevData,
+        posts: prevData.posts.map((post) =>
           post._id === postId
             ? {
                 ...post,
@@ -160,15 +171,15 @@ export default function Home() {
         ),
       }));
     } catch (error) {
-      console.log("Erreur like:", error);
+      console.log("Erreur lors du like:", error);
     }
   };
 
-  // ✅ NOUVEAU : Fonction pour supprimer un post (Admin seulement)
-  const handleDeletePost = (postId, postTitle) => {
+  // ✅ Fonction Supprimer (Admin)
+  const handleDeletePost = (postId) => {
     Alert.alert(
-      "Supprimer la publication",
-      `Voulez-vous vraiment supprimer "${postTitle}" ?\n\nCette action est irréversible.`,
+      "Confirmation",
+      "Voulez-vous vraiment supprimer cet événement ?",
       [
         { text: "Annuler", style: "cancel" },
         {
@@ -177,25 +188,23 @@ export default function Home() {
           onPress: async () => {
             try {
               await axios.delete(
-                `https://api--tanjablabla--t4nqvl4d28d8.code.run/post/${postId}`,
+                `https://api--tanjablabla--t4nqvl4d28d8.code.run/admin/post/${postId}`,
                 {
-                  headers: { Authorization: `Bearer ${token}` },
+                  headers: {
+                    Authorization: `Bearer ${token}`,
+                  },
                 }
               );
 
-              // Mettre à jour la liste localement
-              setData((prev) => ({
-                ...prev,
-                posts: prev.posts.filter((post) => post._id !== postId),
+              setData((prevData) => ({
+                ...prevData,
+                posts: prevData.posts.filter((post) => post._id !== postId),
               }));
-
-              Alert.alert("Succès", "Publication supprimée avec succès");
             } catch (error) {
-              console.log("Erreur suppression:", error);
+              console.log("Erreur lors de la suppression:", error);
               Alert.alert(
                 "Erreur",
-                error.response?.data?.message ||
-                  "Impossible de supprimer la publication"
+                error.response?.data?.message || "Erreur lors de la suppression"
               );
             }
           },
@@ -204,26 +213,17 @@ export default function Home() {
     );
   };
 
-  const getTypeColor = (type) => {
-    switch (type) {
-      case "event":
-        return "#ffdd11";
-      case "recommandation":
-        return "#eca305";
-      case "vente":
-        return "#0d7dca";
-      case "question":
-        return "#142247";
-      default:
-        return "#999";
-    }
-  };
+  // ✅ Redirection si pas connecté
+  if (!token) {
+    return null;
+  }
 
+  // ✅ Loading
   if (isLoading && !refreshing) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#007bff" />
-        <Text>Chargement...</Text>
+        <ActivityIndicator size="large" color="#ffdd11" />
+        <Text style={styles.loadingText}>Chargement des événements...</Text>
       </View>
     );
   }
@@ -236,7 +236,9 @@ export default function Home() {
           <Ionicons name="menu" size={28} color="#333" />
         </TouchableOpacity>
 
-        <Text style={styles.headerTitle}>Accueil</Text>
+        <View style={styles.headerCenter}>
+          <Text style={styles.headerTitle}>Événements</Text>
+        </View>
 
         {/* Placeholder pour équilibrer le header */}
         <View style={styles.headerRight}>
@@ -253,81 +255,72 @@ export default function Home() {
         style={styles.container}
         contentContainerStyle={styles.scrollContent}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={["#ffdd11"]}
+            tintColor="#ffdd11"
+          />
         }
       >
-        {/* Recherche */}
+        {/* Barre de recherche */}
         <View style={styles.searchContainer}>
-          <Ionicons name="search" size={20} color="#999" />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Rechercher..."
-            placeholderTextColor="#999"
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-          />
+          <View style={styles.searchInputWrapper}>
+            <Ionicons
+              name="search"
+              size={20}
+              color="#999"
+              style={styles.searchIcon}
+            />
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Rechercher par titre, auteur, lieu..."
+              placeholderTextColor="#999"
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+            />
+            {searchQuery ? (
+              <TouchableOpacity onPress={() => setSearchQuery("")}>
+                <Ionicons name="close-circle" size={20} color="#999" />
+              </TouchableOpacity>
+            ) : null}
+          </View>
           {searchQuery ? (
-            <TouchableOpacity onPress={() => setSearchQuery("")}>
-              <Ionicons name="close-circle" size={20} color="#999" />
-            </TouchableOpacity>
+            <Text style={styles.searchResultsCount}>
+              {filteredPosts.length} résultat(s) trouvé(s)
+            </Text>
           ) : null}
         </View>
 
-        {/* Message si aucun post */}
-        {filteredPosts.length === 0 ? (
+        {/* Message si aucun résultat */}
+        {filteredPosts.length === 0 && (
           <View style={styles.noResults}>
-            <Ionicons name="sad-outline" size={50} color="#999" />
-            <Text style={styles.noResultsText}>Aucun post disponible</Text>
+            <Ionicons name="calendar-outline" size={60} color="#ffdd11" />
+            <Text style={styles.noResultsText}>
+              {searchQuery
+                ? `Aucun événement ne correspond à "${searchQuery}"`
+                : "Aucun événement pour le moment."}
+            </Text>
           </View>
-        ) : null}
+        )}
 
-        {/* Posts */}
+        {/* Liste des événements */}
         {filteredPosts.map((post) => (
           <TouchableOpacity
             key={post._id}
-            style={[styles.article, post.isPinned && styles.pinnedPost]}
+            style={styles.article}
             onPress={() => router.push(`/post/${post._id}`)}
-            activeOpacity={0.8}
+            activeOpacity={0.9}
           >
             {/* Header du post */}
             <View style={styles.sousHeader}>
               <View style={styles.sousHeaderLeft}>
-                <View
-                  style={[
-                    styles.light,
-                    { backgroundColor: getTypeColor(post.type) },
-                  ]}
-                />
+                <View style={[styles.light, styles.lightEvent]} />
                 <Text style={styles.postType}>{post.type}</Text>
-                {post.isPinned ? (
-                  <View style={styles.pinnedBadge}>
-                    <Ionicons name="pin" size={12} color="#007bff" />
-                    <Text style={styles.pinnedText}>Épinglé</Text>
-                  </View>
-                ) : null}
-              </View>
-
-              {/* ✅ NOUVEAU : Bouton supprimer pour admin */}
-              <View style={styles.sousHeaderRight}>
-                {post.city ? (
-                  <Text style={styles.postCity}>{post.city}</Text>
-                ) : null}
-
-                {isAdmin ? (
-                  <TouchableOpacity
-                    style={styles.deleteBtn}
-                    onPress={(e) => {
-                      e.stopPropagation();
-                      handleDeletePost(post._id, post.titre);
-                    }}
-                  >
-                    <Ionicons name="trash-outline" size={18} color="#e74c3c" />
-                  </TouchableOpacity>
-                ) : null}
               </View>
             </View>
 
-            {/* Avatar et infos auteur */}
+            {/* Profil auteur */}
             <View style={styles.avatar}>
               {post.authorId?.account?.avatar?.secure_url ? (
                 <Image
@@ -343,69 +336,112 @@ export default function Home() {
                   </Text>
                 </View>
               )}
-              <View>
+              <View style={styles.avatarInfo}>
                 <Text style={styles.username}>
                   {post.authorId?.account?.username}
                 </Text>
                 <Text style={styles.dateText}>
-                  {new Date(post.createdAt).toLocaleDateString("fr-FR")}
+                  Publié le {new Date(post.createdAt).toLocaleDateString()}
                 </Text>
               </View>
             </View>
 
-            {/* Titre */}
+            {/* Contenu */}
             <Text style={styles.titre}>{post.titre}</Text>
-
-            {/* Contenu - max 1 ligne avec "..." */}
-            {post.content ? (
+            {post.description ? (
               <Text
-                style={styles.content}
-                numberOfLines={1}
+                style={styles.description}
+                numberOfLines={2}
                 ellipsizeMode="tail"
               >
-                {post.content}
+                {post.description}
               </Text>
             ) : null}
 
+            {/* ✅ Infos spécifiques aux événements */}
+            <View style={styles.eventInfo}>
+              {post.lieu && (
+                <View style={styles.eventInfoRow}>
+                  <Ionicons name="location" size={16} color="#666" />
+                  <Text style={styles.eventInfoText}>{post.lieu}</Text>
+                </View>
+              )}
+              {post.dateEvent && (
+                <View style={styles.eventInfoRow}>
+                  <Ionicons name="calendar" size={16} color="#666" />
+                  <Text style={styles.eventInfoText}>
+                    {new Date(post.dateEvent).toLocaleDateString("fr-FR", {
+                      weekday: "long",
+                      day: "numeric",
+                      month: "long",
+                    })}
+                  </Text>
+                </View>
+              )}
+              {post.nbParticipants && (
+                <View style={styles.eventInfoRow}>
+                  <Ionicons name="people" size={16} color="#666" />
+                  <Text style={styles.eventInfoText}>
+                    {post.nbParticipants} participants max
+                  </Text>
+                </View>
+              )}
+            </View>
+
             {/* Image preview */}
-            {post.images?.[0]?.url ? (
+            {post.images && post.images.length > 0 && (
               <Image
                 source={{ uri: post.images[0].url }}
                 style={styles.postPreview}
                 resizeMode="cover"
               />
-            ) : null}
+            )}
 
             {/* Interactions */}
             <View style={styles.interaction}>
-              <TouchableOpacity
-                style={styles.actionBtn}
-                onPress={(e) => {
-                  e.stopPropagation();
-                  handleLike(post._id);
-                }}
-              >
-                <FontAwesome
-                  name={post.hasLiked ? "heart" : "heart-o"}
-                  size={18}
-                  color={post.hasLiked ? "#e74c3c" : "#666"}
-                />
-                <Text style={styles.number}>{post.likesCount || 0}</Text>
-              </TouchableOpacity>
+              <View style={styles.users}>
+                {/* Like */}
+                <TouchableOpacity
+                  style={styles.actionBtn}
+                  onPress={() => handleLike(post._id)}
+                >
+                  <FontAwesome
+                    name={post.hasLiked ? "heart" : "heart-o"}
+                    size={18}
+                    color={post.hasLiked ? "#e74c3c" : "#666"}
+                  />
+                  <Text style={styles.number}>{post.likesCount || 0}</Text>
+                </TouchableOpacity>
 
-              <View style={styles.actionBtn}>
-                <FontAwesome name="comment-o" size={18} color="#666" />
-                <Text style={styles.number}>{post.commentsCount || 0}</Text>
+                {/* Commentaires */}
+                <TouchableOpacity
+                  style={styles.actionBtn}
+                  onPress={() => router.push(`/post/${post._id}`)}
+                >
+                  <FontAwesome name="comment-o" size={18} color="#666" />
+                  <Text style={styles.number}>{post.commentsCount || 0}</Text>
+                </TouchableOpacity>
               </View>
+
+              {/* Actions Admin */}
+              {isAdmin && (
+                <TouchableOpacity
+                  style={styles.adminBtn}
+                  onPress={() => handleDeletePost(post._id)}
+                >
+                  <FontAwesome name="trash-o" size={20} color="#e74c3c" />
+                </TouchableOpacity>
+              )}
             </View>
           </TouchableOpacity>
         ))}
 
-        {/* Espace en bas pour la tab bar */}
+        {/* Espace en bas */}
         <View style={styles.bottomSpacer} />
       </ScrollView>
 
       {/* ✅ MENU BURGER (Drawer) */}
+
       <Modal
         visible={menuVisible}
         transparent
@@ -422,6 +458,7 @@ export default function Home() {
           {/* Header du menu */}
           <View style={styles.drawerHeader}>
             <View style={styles.drawerProfile}>
+              {/* ✅ CORRECTION : user.avatar au lieu de user.account.avatar */}
               {user?.avatar?.secure_url ? (
                 <Image
                   source={{ uri: user.avatar.secure_url }}
@@ -430,14 +467,17 @@ export default function Home() {
               ) : (
                 <View style={styles.drawerAvatarPlaceholder}>
                   <Text style={styles.drawerAvatarText}>
+                    {/* ✅ CORRECTION : user.username au lieu de user.account.username */}
                     {user?.username?.charAt(0).toUpperCase() || "?"}
                   </Text>
                 </View>
               )}
               <View style={styles.drawerUserInfo}>
+                {/* ✅ CORRECTION : user.username */}
                 <Text style={styles.drawerUsername}>
                   {user?.username || "Utilisateur"}
                 </Text>
+                {/* ✅ CORRECTION : user.city (pas d'email dans la réponse API) */}
                 <Text style={styles.drawerEmail}>{user?.city || ""}</Text>
               </View>
             </View>
@@ -565,6 +605,8 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#fff",
   },
+
+  // ✅ Header
   header: {
     flexDirection: "row",
     alignItems: "center",
@@ -578,6 +620,12 @@ const styles = StyleSheet.create({
   },
   burgerBtn: {
     padding: 5,
+    width: 50,
+  },
+  headerCenter: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
   },
   headerTitle: {
     fontSize: 20,
@@ -599,6 +647,8 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: "bold",
   },
+
+  // ✅ Drawer (Menu burger)
   overlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: "rgba(0, 0, 0, 0.5)",
@@ -640,12 +690,12 @@ const styles = StyleSheet.create({
     width: 50,
     height: 50,
     borderRadius: 25,
-    backgroundColor: "#007bff",
+    backgroundColor: "#ffdd11",
     justifyContent: "center",
     alignItems: "center",
   },
   drawerAvatarText: {
-    color: "#fff",
+    color: "#333",
     fontSize: 20,
     fontWeight: "bold",
   },
@@ -715,6 +765,8 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginTop: 15,
   },
+
+  // ✅ Reste des styles
   container: {
     flex: 1,
     backgroundColor: "#fff",
@@ -727,32 +779,39 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
+    backgroundColor: "#fff",
   },
-  cityHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#e8f4fd",
-    padding: 10,
-    borderRadius: 10,
+  loadingText: {
+    marginTop: 10,
+    color: "#666",
+  },
+
+  // Search
+  searchContainer: {
     gap: 5,
   },
-  cityHeaderText: {
-    color: "#007bff",
-    fontWeight: "600",
-  },
-  searchContainer: {
+  searchInputWrapper: {
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#f5f5f5",
     borderRadius: 15,
     paddingHorizontal: 15,
     height: 45,
-    gap: 10,
+  },
+  searchIcon: {
+    marginRight: 10,
   },
   searchInput: {
     flex: 1,
     fontSize: 16,
   },
+  searchResultsCount: {
+    color: "#666",
+    fontSize: 12,
+    marginLeft: 5,
+  },
+
+  // No Results
   noResults: {
     alignItems: "center",
     paddingVertical: 50,
@@ -761,7 +820,10 @@ const styles = StyleSheet.create({
   noResultsText: {
     color: "#999",
     textAlign: "center",
+    fontSize: 16,
   },
+
+  // Article/Post
   article: {
     backgroundColor: "#f5f5f5",
     borderRadius: 15,
@@ -769,88 +831,63 @@ const styles = StyleSheet.create({
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1,
-    shadowRadius: 3,
-    elevation: 2,
+    shadowRadius: 5,
+    elevation: 3,
   },
-  pinnedPost: {
-    borderWidth: 2,
-    borderColor: "#007bff",
-    backgroundColor: "#f8fbff",
-  },
+
+  // Sous Header
   sousHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 10,
+    marginBottom: 15,
   },
   sousHeaderLeft: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
   },
-  // ✅ NOUVEAU STYLE
-  sousHeaderRight: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-  },
   light: {
     width: 15,
     height: 15,
     borderRadius: 5,
+  },
+  lightEvent: {
+    backgroundColor: "#ffdd11",
   },
   postType: {
     fontWeight: "bold",
     fontStyle: "italic",
     textTransform: "capitalize",
   },
-  pinnedBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#e8f4fd",
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 8,
-    gap: 3,
-  },
-  pinnedText: {
-    color: "#007bff",
-    fontSize: 10,
-    fontWeight: "600",
-  },
-  postCity: {
-    color: "#999",
-    fontSize: 12,
-  },
-  // ✅ NOUVEAU STYLE
-  deleteBtn: {
-    padding: 5,
-    backgroundColor: "#fee",
-    borderRadius: 8,
-  },
+
+  // Avatar
   avatar: {
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
-    marginBottom: 10,
+    marginBottom: 15,
   },
   avatarImg: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 50,
+    height: 50,
+    borderRadius: 25,
   },
   avatarPlaceholder: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "#007bff",
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: "#ffdd11",
     justifyContent: "center",
     alignItems: "center",
   },
   avatarPlaceholderText: {
-    color: "#fff",
+    color: "#333",
+    fontSize: 20,
     fontWeight: "bold",
-    fontSize: 16,
+  },
+  avatarInfo: {
+    gap: 2,
   },
   username: {
     fontWeight: "600",
@@ -860,36 +897,58 @@ const styles = StyleSheet.create({
     color: "#999",
     fontSize: 12,
   },
+
+  // Content
   titre: {
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: "bold",
     marginBottom: 5,
-    color: "#333",
   },
   description: {
     fontSize: 14,
-    color: "#666",
-    marginBottom: 5,
-    lineHeight: 20,
-  },
-  content: {
-    fontSize: 13,
-    color: "#888",
+    color: "#333",
     marginBottom: 10,
-    lineHeight: 18,
   },
+
+  // Event Info
+  eventInfo: {
+    backgroundColor: "#fff",
+    borderRadius: 10,
+    padding: 12,
+    gap: 8,
+    marginBottom: 15,
+  },
+  eventInfoRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  eventInfoText: {
+    fontSize: 14,
+    color: "#666",
+  },
+
+  // Image
   postPreview: {
     width: "100%",
-    height: 180,
-    borderRadius: 10,
+    height: 200,
+    borderRadius: 15,
     marginBottom: 10,
   },
+
+  // Interaction
   interaction: {
     flexDirection: "row",
-    gap: 20,
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginTop: 5,
     paddingTop: 10,
     borderTopWidth: 1,
     borderTopColor: "#eee",
+  },
+  users: {
+    flexDirection: "row",
+    gap: 15,
   },
   actionBtn: {
     flexDirection: "row",
@@ -900,6 +959,11 @@ const styles = StyleSheet.create({
     color: "#666",
     fontSize: 14,
   },
+  adminBtn: {
+    padding: 5,
+  },
+
+  // Bottom Spacer
   bottomSpacer: {
     height: 20,
   },

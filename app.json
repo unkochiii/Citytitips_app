@@ -1,12 +1,12 @@
 {
   "expo": {
-    "name": "en2VersV0",
-    "slug": "en2VersV0",
+    "name": "Citytitips",
+    "slug": "Citytitips",
     "version": "1.0.0",
     "scheme": "myapp",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
-    "newArchEnabled": true,
+    "newArchEnabled": false,
     "splash": {
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
@@ -18,20 +18,20 @@
       "adaptiveIcon": {
         "backgroundColor": "#ffffff"
       },
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "usesCleartextTraffic": true,
+      "package": "com.unkochiii.Citytitips"
     },
     "web": {},
     "plugins": [
       "expo-router",
-      [
-        "@sentry/react-native/expo",
-        {
-          "url": "https://sentry.io/",
-          "project": "react-native",
-          "organization": "en2versv0"
-        }
-      ],
       "expo-secure-store"
-    ]
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "64d5b3cb-3015-4f47-b7cc-e58361d4c52f"
+      }
+    }
   }
 }
