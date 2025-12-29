@@ -1,0 +1,45 @@
+name: Build Android APK
+on: [push]
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Setup Java
+        uses: actions/setup-java@v3
+        with:
+          distribution: "temurin"
+          java-version: "17"
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Build APK
+        run: |
+          # Désactiver New Architecture
+          sed -i 's/"newArchEnabled": true/"newArchEnabled": false/' app.json
+
+          # Générer Android
+          npx expo prebuild --platform android --non-interactive
+
+          # Build APK
+          cd android
+          ./gradlew clean assembleRelease
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Citytitips-APK
+          path: android/app/build/outputs/apk/release/app-release.apk
+          retention-days: 90
