@@ -19,7 +19,6 @@
         "backgroundColor": "#ffffff"
       },
       "edgeToEdgeEnabled": true,
-      "usesCleartextTraffic": true,
       "package": "com.unkochiii.Citytitips"
     },
     "web": {},
