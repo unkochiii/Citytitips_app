@@ -26,19 +26,41 @@ const DRAWER_WIDTH = SCREEN_WIDTH * 0.75;
 
 export default function Home() {
   const router = useRouter();
-  const { token, user, logout } = useAuth();
+  const {
+    token,
+    user,
+    logout,
+    isAdmin: ctxIsAdmin,
+    isSuperAdmin: ctxIsSuperAdmin,
+  } = useAuth();
 
   const [data, setData] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
 
+  const MaPage = () => {
+    const { user, token } = useAuth();
+
+    // 👇 COPIE-COLLE CE LOG
+    console.log("========== DEBUG USER ==========");
+    console.log("User complet:", JSON.stringify(user, null, 2));
+    console.log("Token existe:", !!token);
+    console.log("================================");
+
+    // ...
+  };
   // ✅ State pour le menu burger
   const [menuVisible, setMenuVisible] = useState(false);
   const [slideAnim] = useState(new Animated.Value(-DRAWER_WIDTH));
 
-  // ✅ CORRECTION : Adapter à la vraie structure
-  const isAdmin = user?.role === "admin";
+  // ✅ CORRECTION : Adapter à la vraie structure (préférence au flag du contexte)
+  const isAdmin =
+    ctxIsAdmin || user?.roles?.includes?.("admin") || user?.role === "admin";
+  const isSuperAdmin =
+    ctxIsSuperAdmin ||
+    user?.roles?.includes?.("superAdmin") ||
+    user?.role === "superAdmin";
   const userCity = user?.city || "";
 
   // ✅ Ouvrir le menu
@@ -81,31 +103,49 @@ export default function Home() {
   const fetchData = useCallback(async () => {
     if (!token) return;
 
+    console.log("🚀 Fetch démarré...");
+
     try {
       setIsLoading(true);
+
+      // ✅ Accéder à user?.city directement ICI (pas via userCity)
+      const cityParam = user?.city || "";
+
+      console.log("Ville envoyée:", cityParam);
+
       const response = await axios.get(
         "https://api--tanjablabla--t4nqvl4d28d8.code.run/posts",
         {
           headers: {
             Authorization: `Bearer ${token}`,
           },
+          params: cityParam ? { city: cityParam } : {},
         }
       );
 
-      console.log("Nombre de posts:", response.data.posts?.length);
-      setData(response.data);
+      console.log("✅ Réponse reçue");
+
+      // ✅ Accéder à response.data.data
+      const apiData = response.data.data;
+
+      console.log("Posts trouvés:", apiData?.posts?.length);
+
+      setData(apiData);
     } catch (error) {
-      console.log(error);
+      console.log("❌ Erreur:", error.response?.data || error.message);
+      setData({ posts: [] });
     } finally {
+      console.log("🏁 Fetch terminé");
       setIsLoading(false);
     }
-  }, [token]);
+  }, [token, user?.city]); // ✅ user?.city au lieu de userCity
 
   useEffect(() => {
-    if (token) {
+    if (token && user) {
+      // ✅ Attendre que user soit chargé
       fetchData();
     }
-  }, [fetchData, token]);
+  }, [token, user, fetchData]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -506,6 +546,24 @@ export default function Home() {
                   <Ionicons name="people-outline" size={24} color="#007bff" />
                   <Text style={[styles.drawerItemText, { color: "#007bff" }]}>
                     Gérer les utilisateurs
+                  </Text>
+                  <Ionicons name="chevron-forward" size={20} color="#007bff" />
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.drawerItem}
+                  onPress={() => {
+                    closeMenu();
+                    router.push("/admin/pending-commerce");
+                  }}
+                >
+                  <Ionicons
+                    name="storefront-outline"
+                    size={24}
+                    color="#007bff"
+                  />
+                  <Text style={[styles.drawerItemText, { color: "#007bff" }]}>
+                    Commerces en attente
                   </Text>
                   <Ionicons name="chevron-forward" size={20} color="#007bff" />
                 </TouchableOpacity>

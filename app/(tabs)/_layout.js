@@ -27,7 +27,7 @@ export default function TabsLayout() {
             <Ionicons name="home" size={size} color={color} />
           ),
         }}
-      />{" "}
+      />
       <Tabs.Screen
         name="publish"
         options={{
@@ -46,13 +46,46 @@ export default function TabsLayout() {
           ),
         }}
       />
+      <Tabs.Screen
+        name="commerce"
+        options={{
+          title: "Commerces",
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="storefront" size={size} color={color} />
+          ),
+        }}
+      />
+
       {/* ✅ Cache la page post/[id] de la tab bar */}
       <Tabs.Screen
         name="post/[id]"
         options={{
-          href: null, // ← Cache de la tab bar
+          href: null,
         }}
       />
+
+      {/* ✅ Cache la page post/[id]/edit de la tab bar */}
+      <Tabs.Screen
+        name="post/[id]/edit"
+        options={{
+          href: null,
+        }}
+      />
+
+      {/* ❌ SUPPRIMER CES LIGNES - géré par commerce/_layout.js maintenant
+      <Tabs.Screen
+        name="commerce/create"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="commerce/[id]"
+        options={{
+          href: null,
+        }}
+      />
+      */}
     </Tabs>
   );
 }

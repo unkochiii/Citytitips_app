@@ -211,7 +211,7 @@ export default function Profile() {
           {/* Bouton modifier le profil */}
           <TouchableOpacity
             style={styles.editProfileBtn}
-            onPress={() => router.push("/profile/edit")}
+            onPress={() => router.push("/editProfile")}
           >
             <Text style={styles.editProfileBtnText}>Modifier le profil</Text>
           </TouchableOpacity>
@@ -479,6 +479,7 @@ export default function Profile() {
                     style={styles.editBtn}
                     onPress={() => router.push(`/post/${post._id}/edit`)}
                   >
+                    {/* /post/${post._id}/edit */}
                     <Ionicons name="pencil-outline" size={16} color="#fff" />
                     <Text style={styles.editBtnText}>Modifier</Text>
                   </TouchableOpacity>

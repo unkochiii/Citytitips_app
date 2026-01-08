@@ -1,4 +1,4 @@
-// app/login.js
+// app/(auth)/login.js
 import React, { useState } from "react";
 import {
   View,
@@ -7,12 +7,13 @@ import {
   TouchableOpacity,
   StyleSheet,
   ImageBackground,
-  KeyboardAvoidingView,
-  Platform,
+  ActivityIndicator,
 } from "react-native";
 import axios from "axios";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { useAuth } from "../../context/AuthContext";
+import { KeyboardAwareScrollView } from "react-native-keyboard-aware-scroll-view";
+import { Ionicons } from "@expo/vector-icons";
 
 const Login = () => {
   const router = useRouter();
@@ -22,43 +23,66 @@ const Login = () => {
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
 
   const handleSubmit = async () => {
+    setErrorMessage("");
+
+    // Validation basique
+    if (!email || email.length < 3) {
+      setErrorMessage("Email invalide");
+      return;
+    }
+    if (!password || password.length < 6) {
+      setErrorMessage("Mot de passe trop court (min 6 caractères)");
+      return;
+    }
+
     try {
-      if (email && email.length > 3 && password && password.length > 6) {
-        const response = await axios.post(
-          "https://api--tanjablabla--t4nqvl4d28d8.code.run/user/login",
-          { email, password }
-        );
+      setIsLoading(true);
 
-        console.log("Réponse login:", response.data);
+      const response = await axios.post(
+        "https://api--tanjablabla--t4nqvl4d28d8.code.run/user/login",
+        { email, password }
+      );
 
-        if (response.data.token) {
-          // ✅ CORRECTION : Passer l'objet complet response.data
-          await loginUser(response.data);
-          setErrorMessage("");
+      console.log("Réponse login:", response.data);
 
-          console.log("Login réussi, redirection...");
+      // ✅ CORRECTION : La structure est response.data.data.token
+      if (response.data.success && response.data.data?.token) {
+        // ✅ La réponse login a déjà la bonne structure : { token, user }
+        const authData = {
+          token: response.data.data.token,
+          user: response.data.data.user,
+        };
 
-          if (params?.from) {
-            router.replace(params.from);
-          } else {
-            router.replace("/");
-          }
+        console.log("AuthData préparé:", authData);
+
+        await loginUser(authData);
+
+        console.log("Login réussi, redirection...");
+
+        if (params?.from) {
+          router.replace(params.from);
         } else {
-          setErrorMessage("Un problème est survenu");
+          router.replace("/");
         }
       } else {
-        setErrorMessage("Email pas au bon format ou mot de passe trop court.");
+        setErrorMessage("Un problème est survenu");
       }
     } catch (error) {
       console.log("Erreur login:", error);
       if (error.response) {
-        setErrorMessage(error.response.data.message);
+        setErrorMessage(
+          error.response.data.message || "Identifiants incorrects"
+        );
       } else {
-        setErrorMessage("Erreur de connexion");
+        setErrorMessage("Erreur de connexion au serveur");
       }
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -68,9 +92,12 @@ const Login = () => {
       style={styles.background}
       resizeMode="repeat"
     >
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        style={styles.container}
+      <KeyboardAwareScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={styles.scrollContent}
+        enableOnAndroid={true}
+        extraScrollHeight={30}
+        keyboardShouldPersistTaps="handled"
       >
         <View style={styles.card}>
           <Text style={styles.title}>Se connecter</Text>
@@ -87,29 +114,55 @@ const Login = () => {
               autoCorrect={false}
             />
 
+            <View style={styles.passwordContainer}>
+              <TextInput
+                style={styles.passwordInput}
+                placeholder="Mot de passe"
+                placeholderTextColor="#999"
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry={!showPassword}
+                autoCapitalize="none"
+              />
+              <TouchableOpacity
+                style={styles.eyeButton}
+                onPress={() => setShowPassword(!showPassword)}
+              >
+                <Ionicons
+                  name={showPassword ? "eye-off" : "eye"}
+                  size={22}
+                  color="#666"
+                />
+              </TouchableOpacity>
+            </View>
+
             {errorMessage ? (
               <Text style={styles.error}>{errorMessage}</Text>
             ) : null}
 
-            <TextInput
-              style={styles.input}
-              placeholder="Mot de passe"
-              placeholderTextColor="#999"
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry={true}
-              autoCapitalize="none"
-            />
+            <TouchableOpacity
+              style={[styles.button, isLoading && styles.buttonDisabled]}
+              onPress={handleSubmit}
+              disabled={isLoading}
+            >
+              {isLoading ? (
+                <ActivityIndicator color="white" />
+              ) : (
+                <Text style={styles.buttonText}>Se connecter</Text>
+              )}
+            </TouchableOpacity>
 
-            <TouchableOpacity style={styles.button} onPress={handleSubmit}>
-              <Text style={styles.buttonText}>Se connecter</Text>
+            <TouchableOpacity
+              onPress={() => router.push("/(auth)/forgot-password")}
+            >
+              <Text style={styles.forgotLink}>Mot de passe oublié ?</Text>
             </TouchableOpacity>
           </View>
 
           <TouchableOpacity
             onPress={() =>
               router.push({
-                pathname: "/signup",
+                pathname: "/(auth)/signup",
                 params: { from: params?.from },
               })
             }
@@ -117,23 +170,23 @@ const Login = () => {
             <Text style={styles.link}>Pas de compte ? Inscris-toi</Text>
           </TouchableOpacity>
         </View>
-      </KeyboardAvoidingView>
+      </KeyboardAwareScrollView>
     </ImageBackground>
   );
 };
 
 const styles = StyleSheet.create({
-  // ... (styles inchangés)
   background: {
     flex: 1,
     width: "100%",
     height: "100%",
   },
-  container: {
-    flex: 1,
+  scrollContent: {
+    flexGrow: 1,
     justifyContent: "center",
     alignItems: "center",
     paddingHorizontal: 20,
+    paddingVertical: 40,
   },
   card: {
     backgroundColor: "white",
@@ -169,6 +222,29 @@ const styles = StyleSheet.create({
     fontSize: 16,
     backgroundColor: "#fafafa",
   },
+  passwordContainer: {
+    width: "100%",
+    flexDirection: "row",
+    alignItems: "center",
+    position: "relative",
+  },
+  passwordInput: {
+    flex: 1,
+    height: 50,
+    borderWidth: 1,
+    borderColor: "#ddd",
+    borderRadius: 8,
+    paddingHorizontal: 15,
+    paddingRight: 50,
+    fontSize: 16,
+    backgroundColor: "#fafafa",
+  },
+  eyeButton: {
+    position: "absolute",
+    right: 15,
+    height: 50,
+    justifyContent: "center",
+  },
   button: {
     backgroundColor: "#007bff",
     paddingVertical: 12,
@@ -176,7 +252,12 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     width: "100%",
     alignItems: "center",
+    justifyContent: "center",
     marginTop: 10,
+    minHeight: 48,
+  },
+  buttonDisabled: {
+    backgroundColor: "#7fb8ff",
   },
   buttonText: {
     color: "white",
@@ -184,7 +265,7 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
   },
   error: {
-    color: "red",
+    color: "rgb(212, 87, 87)",
     fontSize: 14,
     textAlign: "center",
   },
@@ -192,6 +273,11 @@ const styles = StyleSheet.create({
     color: "#007bff",
     fontSize: 14,
     textDecorationLine: "underline",
+  },
+  forgotLink: {
+    color: "#666",
+    fontSize: 14,
+    marginTop: 5,
   },
 });
 

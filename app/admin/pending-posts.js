@@ -17,10 +17,11 @@ import { useRouter } from "expo-router";
 import axios from "axios";
 import { useAuth } from "../../context/AuthContext";
 import { FontAwesome, Ionicons } from "@expo/vector-icons";
+import { withAdminOnly } from "../components/withAdminAccess";
 
-export default function PendingPosts() {
+function PendingPosts() {
   const router = useRouter();
-  const { token, user } = useAuth();
+  const { token, user, refreshUser } = useAuth();
 
   const [posts, setPosts] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -28,54 +29,149 @@ export default function PendingPosts() {
   const [error, setError] = useState("");
   const [actionLoading, setActionLoading] = useState(null);
 
-  // ✅ State pour le modal de rejet
   const [rejectModalVisible, setRejectModalVisible] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
   const [postToReject, setPostToReject] = useState(null);
 
-  const isAdmin = user?.role === "admin";
+  // ✅ Fonction pour extraire les posts de n'importe quelle structure de réponse
+  const extractPosts = (responseData) => {
+    console.log(
+      "🔍 Extracting posts from:",
+      JSON.stringify(responseData, null, 2)
+    );
+
+    // Structure: { success: true, data: { posts: [...] } }
+    if (responseData?.success && responseData?.data?.posts) {
+      console.log("✅ Found in: response.data.data.posts");
+      return responseData.data.posts;
+    }
+
+    // Structure: { data: { posts: [...] } }
+    if (responseData?.data?.posts) {
+      console.log("✅ Found in: response.data.data.posts (no success)");
+      return responseData.data.posts;
+    }
+
+    // Structure: { posts: [...] }
+    if (responseData?.posts) {
+      console.log("✅ Found in: response.data.posts");
+      return responseData.posts;
+    }
+
+    // Structure: { data: [...] } (array)
+    if (Array.isArray(responseData?.data)) {
+      console.log("✅ Found in: response.data.data (array)");
+      return responseData.data;
+    }
+
+    // Structure: [...] (direct array)
+    if (Array.isArray(responseData)) {
+      console.log("✅ Found in: response.data (array)");
+      return responseData;
+    }
+
+    console.log("❌ No posts found in response");
+    return [];
+  };
 
   const fetchPendingPosts = useCallback(async () => {
+    console.log("========== FETCH PENDING POSTS START ==========");
+    console.log("🔍 Token exists:", !!token);
+    console.log("🔍 User:", user?.account?.username || user?.username);
+
     try {
       setIsLoading(true);
+      setError("");
+
+      const headers = {};
+      if (token && token !== "null" && token !== "undefined" && token.trim()) {
+        headers.Authorization = `Bearer ${token}`;
+        console.log("✅ Authorization header set");
+      } else {
+        console.log("⚠️ No valid token for Authorization header");
+      }
+
+      console.log("🔍 Making request to /posts/pending...");
+
       const response = await axios.get(
         "https://api--tanjablabla--t4nqvl4d28d8.code.run/posts/pending",
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
+        { headers }
       );
 
-      setPosts(response.data.posts || []);
-      setError("");
+      console.log("✅ Response status:", response.status);
+      console.log("✅ Response data:", JSON.stringify(response.data, null, 2));
+
+      // ✅ Extraire les posts
+      const fetchedPosts = extractPosts(response.data);
+
+      console.log(`✅ Extracted ${fetchedPosts.length} pending post(s)`);
+
+      if (fetchedPosts.length > 0) {
+        console.log("✅ First post:", {
+          id: fetchedPosts[0]._id,
+          titre: fetchedPosts[0].titre,
+          status: fetchedPosts[0].status,
+        });
+      }
+
+      setPosts(fetchedPosts);
+      console.log("✅ State updated with posts");
     } catch (err) {
-      console.error("Erreur:", err);
-      setError(err.response?.data?.message || "Erreur lors du chargement");
+      console.error("❌ Error:", err.message);
+      console.error("❌ Response data:", err.response?.data);
+      console.error("❌ Response status:", err.response?.status);
+
+      if (err.response?.status === 401) {
+        Alert.alert(
+          "Session expirée",
+          "Votre session a expiré. Veuillez vous reconnecter.",
+          [{ text: "OK", onPress: () => router.replace("/(auth)/login") }]
+        );
+      } else if (err.response?.status === 403) {
+        const updated = await (refreshUser
+          ? refreshUser()
+          : Promise.resolve(null));
+
+        if (updated && updated.role !== "admin") {
+          Alert.alert(
+            "Accès refusé",
+            "Votre rôle a changé et vous n'êtes plus administrateur.",
+            [{ text: "OK", onPress: () => router.replace("/(tabs)") }]
+          );
+        } else {
+          Alert.alert(
+            "Accès refusé",
+            "Vous n'avez pas les permissions nécessaires.",
+            [{ text: "OK", onPress: () => router.replace("/(tabs)") }]
+          );
+        }
+      } else {
+        setError(err.response?.data?.message || "Erreur lors du chargement");
+      }
     } finally {
       setIsLoading(false);
+      console.log("========== FETCH PENDING POSTS END ==========");
     }
-  }, [token]);
+  }, [token, router, refreshUser, user]);
 
+  // ✅ useEffect avec log
   useEffect(() => {
-    // Redirection si pas admin
-    if (!isAdmin) {
-      Alert.alert("Accès refusé", "Vous n'avez pas les droits d'accès", [
-        { text: "OK", onPress: () => router.replace("/(tabs)") },
-      ]);
-      return;
+    console.log("🔄 useEffect triggered - token:", !!token);
+    if (token) {
+      fetchPendingPosts();
+    } else {
+      console.log("⚠️ No token, waiting...");
+      setIsLoading(false);
     }
-
-    fetchPendingPosts();
-  }, [isAdmin, fetchPendingPosts]);
+  }, [token, fetchPendingPosts]);
 
   const onRefresh = useCallback(async () => {
+    console.log("🔄 Manual refresh triggered");
     setRefreshing(true);
     await fetchPendingPosts();
     setRefreshing(false);
   }, [fetchPendingPosts]);
 
-  // ✅ Fonction pour afficher les étoiles de notation
   const renderStars = (note) => {
     const maxStars = 5;
     const rating = Math.min(Math.max(0, note || 0), maxStars);
@@ -96,7 +192,6 @@ export default function PendingPosts() {
     return <View style={styles.starsContainer}>{stars}</View>;
   };
 
-  // ✅ Approuver un post
   const handleApprove = (postId) => {
     Alert.alert(
       "Approuver la publication",
@@ -135,14 +230,12 @@ export default function PendingPosts() {
     );
   };
 
-  // ✅ Ouvrir le modal de rejet
   const openRejectModal = (postId) => {
     setPostToReject(postId);
     setRejectReason("");
     setRejectModalVisible(true);
   };
 
-  // ✅ Confirmer le rejet
   const confirmReject = async () => {
     if (!postToReject) return;
 
@@ -174,7 +267,6 @@ export default function PendingPosts() {
     }
   };
 
-  // ✅ Fonction pour obtenir la couleur du type
   const getTypeColor = (type) => {
     switch (type) {
       case "event":
@@ -190,35 +282,37 @@ export default function PendingPosts() {
     }
   };
 
-  // Si pas admin, ne rien afficher
-  if (!isAdmin) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#007bff" />
-      </View>
-    );
-  }
-
+  // ✅ Loading state
   if (isLoading && !refreshing) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#007bff" />
-        <Text style={styles.loadingText}>Chargement...</Text>
+        <Text style={styles.loadingText}>
+          Chargement des posts en attente...
+        </Text>
       </View>
     );
   }
 
+  // ✅ Log du render
+  console.log("🎨 Rendering with", posts.length, "posts");
+
   return (
     <View style={styles.container}>
-      {/* ✅ Header */}
+      {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()}>
           <Ionicons name="arrow-back" size={24} color="#333" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Modération</Text>
-        <TouchableOpacity onPress={onRefresh}>
-          <Ionicons name="refresh" size={24} color="#007bff" />
-        </TouchableOpacity>
+        <View style={styles.headerRight}>
+          <View style={styles.adminBadge}>
+            <Text style={styles.adminBadgeText}>Admin</Text>
+          </View>
+          <TouchableOpacity onPress={onRefresh}>
+            <Ionicons name="refresh" size={24} color="#007bff" />
+          </TouchableOpacity>
+        </View>
       </View>
 
       <ScrollView
@@ -228,22 +322,44 @@ export default function PendingPosts() {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
       >
-        {/* ✅ Compteur */}
+        {/* Info utilisateur connecté */}
+        <View style={styles.userInfoContainer}>
+          <Ionicons name="person-circle-outline" size={16} color="#007bff" />
+          <Text style={styles.userInfoText}>
+            Connecté en tant que : {user?.username || user?.account?.username} (
+            {user?.role || user?.roles?.[0] || "admin"})
+          </Text>
+        </View>
+
+        {/* ✅ Debug info - à supprimer en production */}
+        <View
+          style={[styles.userInfoContainer, { backgroundColor: "#fff3cd" }]}
+        >
+          <Ionicons name="bug-outline" size={16} color="#856404" />
+          <Text style={[styles.userInfoText, { color: "#856404" }]}>
+            Debug: {posts.length} post(s) chargé(s) | Token: {token ? "✓" : "✗"}
+          </Text>
+        </View>
+
+        {/* Compteur */}
         <View style={styles.pendingHeader}>
           <Text style={styles.pendingCount}>
             {posts.length} publication{posts.length > 1 ? "s" : ""} en attente
           </Text>
         </View>
 
-        {/* ✅ Message d'erreur */}
+        {/* Message d'erreur */}
         {error ? (
           <View style={styles.errorContainer}>
             <Ionicons name="warning-outline" size={20} color="#721c24" />
             <Text style={styles.errorText}>{error}</Text>
+            <TouchableOpacity onPress={onRefresh} style={styles.retryBtn}>
+              <Text style={styles.retryBtnText}>Réessayer</Text>
+            </TouchableOpacity>
           </View>
         ) : null}
 
-        {/* ✅ Message si aucun post */}
+        {/* Message si aucun post */}
         {posts.length === 0 && !error ? (
           <View style={styles.noResults}>
             <Ionicons
@@ -254,208 +370,233 @@ export default function PendingPosts() {
             <Text style={styles.noResultsText}>
               Aucune publication en attente de modération
             </Text>
+            <TouchableOpacity onPress={onRefresh} style={styles.refreshBtn}>
+              <Ionicons name="refresh" size={18} color="#007bff" />
+              <Text style={styles.refreshBtnText}>Actualiser</Text>
+            </TouchableOpacity>
           </View>
         ) : null}
 
-        {/* ✅ Liste des posts */}
-        {posts.map((post) => (
-          <View key={post._id} style={styles.article}>
-            {/* Sous-header avec type et badge pending */}
-            <View style={styles.sousHeader}>
-              <View style={styles.sousHeaderLeft}>
-                <View
-                  style={[
-                    styles.light,
-                    { backgroundColor: getTypeColor(post.type) },
-                  ]}
-                />
-                <Text style={styles.postType}>{post.type}</Text>
-              </View>
-              <View style={styles.statusBadge}>
-                <Text style={styles.statusBadgeText}>En attente</Text>
-              </View>
-            </View>
-
-            {/* Contenu cliquable */}
-            <TouchableOpacity
-              onPress={() => router.push(`/post/${post._id}`)}
-              activeOpacity={0.8}
-            >
-              {/* Avatar et infos auteur */}
-              <View style={styles.avatarRow}>
-                {post.authorId?.account?.avatar?.secure_url ? (
-                  <Image
-                    source={{ uri: post.authorId.account.avatar.secure_url }}
-                    style={styles.avatarImg}
+        {/* Liste des posts */}
+        {posts.map((post, index) => {
+          console.log(`🎨 Rendering post ${index + 1}:`, post._id, post.titre);
+          return (
+            <View key={post._id || index} style={styles.article}>
+              {/* Sous-header avec type et badge pending */}
+              <View style={styles.sousHeader}>
+                <View style={styles.sousHeaderLeft}>
+                  <View
+                    style={[
+                      styles.light,
+                      { backgroundColor: getTypeColor(post.type) },
+                    ]}
                   />
-                ) : (
-                  <View style={styles.avatarPlaceholder}>
-                    <Text style={styles.avatarPlaceholderText}>
-                      {post.authorId?.account?.username
-                        ?.charAt(0)
-                        .toUpperCase() || "?"}
-                    </Text>
-                  </View>
-                )}
-                <View style={styles.avatarInfo}>
-                  <Text style={styles.username}>
-                    {post.authorId?.account?.username || "Utilisateur inconnu"}
-                  </Text>
-                  <Text style={styles.dateText}>
-                    Publié le{" "}
-                    {new Date(post.createdAt).toLocaleDateString("fr-FR", {
-                      day: "numeric",
-                      month: "long",
-                      year: "numeric",
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}
-                  </Text>
+                  <Text style={styles.postType}>{post.type || "post"}</Text>
+                </View>
+                <View style={styles.statusBadge}>
+                  <Text style={styles.statusBadgeText}>En attente</Text>
                 </View>
               </View>
 
-              {/* Titre */}
-              <Text style={styles.titre}>{post.titre}</Text>
-
-              {/* Description */}
-              {post.description ? (
-                <Text style={styles.description}>{post.description}</Text>
-              ) : null}
-
-              {/* Contenu */}
-              {post.content ? (
-                <Text style={styles.content} numberOfLines={3}>
-                  {post.content}
-                </Text>
-              ) : null}
-
-              {/* Catégorie */}
-              {post.categorie ? (
-                <View style={styles.categoryTag}>
-                  <Text style={styles.categoryTagText}>{post.categorie}</Text>
-                </View>
-              ) : null}
-
-              {/* Infos EVENT */}
-              {post.type === "event" && (
-                <View style={styles.eventInfo}>
-                  {post.lieu ? (
-                    <View style={styles.infoRow}>
-                      <Ionicons
-                        name="location-outline"
-                        size={14}
-                        color="#666"
-                      />
-                      <Text style={styles.infoText}>{post.lieu}</Text>
-                    </View>
-                  ) : null}
-                  {post.dateEvent ? (
-                    <View style={styles.infoRow}>
-                      <Ionicons
-                        name="calendar-outline"
-                        size={14}
-                        color="#666"
-                      />
-                      <Text style={styles.infoText}>
-                        {new Date(post.dateEvent).toLocaleDateString("fr-FR", {
-                          weekday: "long",
-                          day: "numeric",
-                          month: "long",
-                          year: "numeric",
-                        })}
+              {/* Contenu cliquable */}
+              <TouchableOpacity
+                onPress={() => router.push(`/post/${post._id}`)}
+                activeOpacity={0.8}
+              >
+                {/* Avatar et infos auteur */}
+                <View style={styles.avatarRow}>
+                  {post.authorId?.account?.avatar?.secure_url ? (
+                    <Image
+                      source={{ uri: post.authorId.account.avatar.secure_url }}
+                      style={styles.avatarImg}
+                    />
+                  ) : (
+                    <View style={styles.avatarPlaceholder}>
+                      <Text style={styles.avatarPlaceholderText}>
+                        {post.authorId?.account?.username
+                          ?.charAt(0)
+                          .toUpperCase() || "?"}
                       </Text>
-                    </View>
-                  ) : null}
-                  {post.nbParticipants ? (
-                    <View style={styles.infoRow}>
-                      <Ionicons name="people-outline" size={14} color="#666" />
-                      <Text style={styles.infoText}>
-                        {post.nbParticipants} participants Max
-                      </Text>
-                    </View>
-                  ) : null}
-                </View>
-              )}
-
-              {/* Infos RECOMMANDATION avec étoiles */}
-              {post.type === "recommandation" && (
-                <View style={styles.recoInfo}>
-                  {post.nbStar !== undefined && post.nbStar !== null && (
-                    <View style={styles.noteContainer}>
-                      <Text style={styles.noteLabel}>Note :</Text>
-                      {renderStars(post.nbStar)}
-                      <Text style={styles.noteValue}>({post.nbStar}/5)</Text>
                     </View>
                   )}
-                  {post.lieu ? (
-                    <View style={styles.infoRow}>
-                      <Ionicons
-                        name="location-outline"
-                        size={14}
-                        color="#666"
-                      />
-                      <Text style={styles.infoText}>{post.lieu}</Text>
-                    </View>
-                  ) : null}
+                  <View style={styles.avatarInfo}>
+                    <Text style={styles.username}>
+                      {post.authorId?.account?.username ||
+                        "Utilisateur inconnu"}
+                    </Text>
+                    <Text style={styles.dateText}>
+                      Publié le{" "}
+                      {new Date(post.createdAt).toLocaleDateString("fr-FR", {
+                        day: "numeric",
+                        month: "long",
+                        year: "numeric",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                    </Text>
+                  </View>
                 </View>
-              )}
 
-              {/* Image du post */}
-              {post.images && post.images.length > 0 && (
-                <Image
-                  source={{ uri: post.images[0].url }}
-                  style={styles.postPreview}
-                  resizeMode="cover"
-                />
-              )}
-            </TouchableOpacity>
+                {/* Titre */}
+                <Text style={styles.titre}>{post.titre || "Sans titre"}</Text>
 
-            {/* ✅ Boutons de modération */}
-            <View style={styles.moderationActions}>
-              <TouchableOpacity
-                style={[
-                  styles.approveBtn,
-                  actionLoading === post._id && styles.btnDisabled,
-                ]}
-                onPress={() => handleApprove(post._id)}
-                disabled={actionLoading === post._id}
-              >
-                {actionLoading === post._id ? (
-                  <ActivityIndicator size="small" color="#fff" />
-                ) : (
-                  <>
-                    <Ionicons name="checkmark" size={18} color="#fff" />
-                    <Text style={styles.approveBtnText}>Approuver</Text>
-                  </>
+                {/* Description */}
+                {post.description ? (
+                  <Text style={styles.description}>{post.description}</Text>
+                ) : null}
+
+                {/* Contenu */}
+                {post.content ? (
+                  <Text style={styles.content} numberOfLines={3}>
+                    {post.content}
+                  </Text>
+                ) : null}
+
+                {/* Catégorie */}
+                {post.categorie ? (
+                  <View style={styles.categoryTag}>
+                    <Text style={styles.categoryTagText}>{post.categorie}</Text>
+                  </View>
+                ) : null}
+
+                {/* Ville */}
+                {post.city ? (
+                  <View style={styles.infoRow}>
+                    <Ionicons name="location-outline" size={14} color="#666" />
+                    <Text style={styles.infoText}>{post.city}</Text>
+                  </View>
+                ) : null}
+
+                {/* Infos EVENT */}
+                {post.type === "event" && (
+                  <View style={styles.eventInfo}>
+                    {post.lieu ? (
+                      <View style={styles.infoRow}>
+                        <Ionicons
+                          name="location-outline"
+                          size={14}
+                          color="#666"
+                        />
+                        <Text style={styles.infoText}>{post.lieu}</Text>
+                      </View>
+                    ) : null}
+                    {post.dateEvent ? (
+                      <View style={styles.infoRow}>
+                        <Ionicons
+                          name="calendar-outline"
+                          size={14}
+                          color="#666"
+                        />
+                        <Text style={styles.infoText}>
+                          {new Date(post.dateEvent).toLocaleDateString(
+                            "fr-FR",
+                            {
+                              weekday: "long",
+                              day: "numeric",
+                              month: "long",
+                              year: "numeric",
+                            }
+                          )}
+                        </Text>
+                      </View>
+                    ) : null}
+                    {post.nbParticipants ? (
+                      <View style={styles.infoRow}>
+                        <Ionicons
+                          name="people-outline"
+                          size={14}
+                          color="#666"
+                        />
+                        <Text style={styles.infoText}>
+                          {post.nbParticipants} participants Max
+                        </Text>
+                      </View>
+                    ) : null}
+                  </View>
+                )}
+
+                {/* Infos RECOMMANDATION avec étoiles */}
+                {post.type === "recommandation" && (
+                  <View style={styles.recoInfo}>
+                    {post.nbStar !== undefined && post.nbStar !== null && (
+                      <View style={styles.noteContainer}>
+                        <Text style={styles.noteLabel}>Note :</Text>
+                        {renderStars(post.nbStar)}
+                        <Text style={styles.noteValue}>({post.nbStar}/5)</Text>
+                      </View>
+                    )}
+                    {post.lieu ? (
+                      <View style={styles.infoRow}>
+                        <Ionicons
+                          name="location-outline"
+                          size={14}
+                          color="#666"
+                        />
+                        <Text style={styles.infoText}>{post.lieu}</Text>
+                      </View>
+                    ) : null}
+                  </View>
+                )}
+
+                {/* Image du post */}
+                {post.images && post.images.length > 0 && (
+                  <Image
+                    source={{
+                      uri: post.images[0].url || post.images[0].secure_url,
+                    }}
+                    style={styles.postPreview}
+                    resizeMode="cover"
+                  />
                 )}
               </TouchableOpacity>
 
-              <TouchableOpacity
-                style={[
-                  styles.rejectBtn,
-                  actionLoading === post._id && styles.btnDisabled,
-                ]}
-                onPress={() => openRejectModal(post._id)}
-                disabled={actionLoading === post._id}
-              >
-                {actionLoading === post._id ? (
-                  <ActivityIndicator size="small" color="#fff" />
-                ) : (
-                  <>
-                    <Ionicons name="close" size={18} color="#fff" />
-                    <Text style={styles.rejectBtnText}>Rejeter</Text>
-                  </>
-                )}
-              </TouchableOpacity>
+              {/* Boutons de modération */}
+              <View style={styles.moderationActions}>
+                <TouchableOpacity
+                  style={[
+                    styles.approveBtn,
+                    actionLoading === post._id && styles.btnDisabled,
+                  ]}
+                  onPress={() => handleApprove(post._id)}
+                  disabled={actionLoading === post._id}
+                >
+                  {actionLoading === post._id ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <>
+                      <Ionicons name="checkmark" size={18} color="#fff" />
+                      <Text style={styles.approveBtnText}>Approuver</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[
+                    styles.rejectBtn,
+                    actionLoading === post._id && styles.btnDisabled,
+                  ]}
+                  onPress={() => openRejectModal(post._id)}
+                  disabled={actionLoading === post._id}
+                >
+                  {actionLoading === post._id ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <>
+                      <Ionicons name="close" size={18} color="#fff" />
+                      <Text style={styles.rejectBtnText}>Rejeter</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              </View>
             </View>
-          </View>
-        ))}
+          );
+        })}
 
         {/* Espace en bas */}
         <View style={styles.bottomSpacer} />
       </ScrollView>
 
-      {/* ✅ Modal pour la raison du rejet */}
+      {/* Modal pour la raison du rejet */}
       <Modal
         visible={rejectModalVisible}
         transparent
@@ -504,6 +645,9 @@ export default function PendingPosts() {
   );
 }
 
+// ✅ Export avec le HOC
+export default withAdminOnly(PendingPosts);
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -537,6 +681,39 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     color: "#333",
   },
+  headerRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  adminBadge: {
+    backgroundColor: "#007bff",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+  },
+  adminBadgeText: {
+    color: "#fff",
+    fontSize: 10,
+    fontWeight: "bold",
+  },
+
+  // ========== USER INFO ==========
+  userInfoContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#e3f2fd",
+    padding: 10,
+    borderRadius: 10,
+    marginBottom: 15,
+    gap: 8,
+  },
+  userInfoText: {
+    fontSize: 12,
+    color: "#007bff",
+    fontWeight: "500",
+    flex: 1,
+  },
 
   // ========== SCROLL ==========
   scrollView: {
@@ -560,6 +737,7 @@ const styles = StyleSheet.create({
   errorContainer: {
     flexDirection: "row",
     alignItems: "center",
+    flexWrap: "wrap",
     backgroundColor: "#f8d7da",
     padding: 12,
     borderRadius: 10,
@@ -569,6 +747,17 @@ const styles = StyleSheet.create({
   errorText: {
     color: "#721c24",
     flex: 1,
+  },
+  retryBtn: {
+    backgroundColor: "#721c24",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 5,
+  },
+  retryBtnText: {
+    color: "#fff",
+    fontSize: 12,
+    fontWeight: "600",
   },
 
   // ========== NO RESULTS ==========
@@ -581,6 +770,20 @@ const styles = StyleSheet.create({
     color: "#666",
     fontSize: 16,
     textAlign: "center",
+  },
+  refreshBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "#e3f2fd",
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 20,
+    marginTop: 10,
+  },
+  refreshBtnText: {
+    color: "#007bff",
+    fontWeight: "600",
   },
 
   // ========== ARTICLE ==========

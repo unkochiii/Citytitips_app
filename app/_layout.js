@@ -2,7 +2,8 @@
 import { Slot, useRouter, useSegments } from "expo-router";
 import { AuthProvider, useAuth } from "../context/AuthContext";
 import { useEffect } from "react";
-import { View, ActivityIndicator } from "react-native";
+import { View, ActivityIndicator, Platform } from "react-native";
+import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 
 function AuthGate() {
   const { user, isLoading } = useAuth();
@@ -23,7 +24,6 @@ function AuthGate() {
     }
   }, [user, isLoading, segments]);
 
-  // ✅ Affiche un loader pendant le chargement
   if (isLoading) {
     return (
       <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
@@ -32,14 +32,34 @@ function AuthGate() {
     );
   }
 
-  // ✅ Utilise Slot au lieu de Stack pour laisser les enfants gérer leur navigation
   return <Slot />;
+}
+
+// ✅ Wrapper conditionnel selon la plateforme
+function SafeAreaWrapper({ children }) {
+  if (Platform.OS === "android") {
+    return (
+      <SafeAreaView
+        style={{ flex: 1 }}
+        edges={["top", "bottom", "left", "right"]}
+      >
+        {children}
+      </SafeAreaView>
+    );
+  }
+
+  // iOS : pas besoin de SafeAreaView ici
+  return <>{children}</>;
 }
 
 export default function RootLayout() {
   return (
-    <AuthProvider>
-      <AuthGate />
-    </AuthProvider>
+    <SafeAreaProvider>
+      <SafeAreaWrapper>
+        <AuthProvider>
+          <AuthGate />
+        </AuthProvider>
+      </SafeAreaWrapper>
+    </SafeAreaProvider>
   );
 }

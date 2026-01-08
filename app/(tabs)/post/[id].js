@@ -7,30 +7,38 @@ import {
   TextInput,
   TouchableOpacity,
   StyleSheet,
-  ScrollView,
   ActivityIndicator,
   Alert,
-  KeyboardAvoidingView,
-  Platform,
 } from "react-native";
 import axios from "axios";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useAuth } from "../../../context/AuthContext";
 import { FontAwesome, Ionicons } from "@expo/vector-icons";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { KeyboardAwareScrollView } from "react-native-keyboard-aware-scroll-view";
 
 export default function PostDetail() {
-  const { id } = useLocalSearchParams(); // ✅ Récupère l'id depuis l'URL
+  const { id } = useLocalSearchParams();
   const router = useRouter();
-  const { token, user } = useAuth();
+  const {
+    token,
+    user,
+    isAdmin: ctxIsAdmin,
+    isSuperAdmin: ctxIsSuperAdmin,
+  } = useAuth();
 
   const userId = user?._id || user?.id;
-  const isAdmin = user?.role === "admin";
+  const isAdmin =
+    ctxIsAdmin || user?.roles?.includes?.("admin") || user?.role === "admin";
+  const isSuperAdmin =
+    ctxIsSuperAdmin ||
+    user?.roles?.includes?.("superAdmin") ||
+    user?.role === "superAdmin";
 
   const [post, setPost] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  // States pour les commentaires
   const [comments, setComments] = useState([]);
   const [commentText, setCommentText] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -277,38 +285,50 @@ export default function PostDetail() {
   // ✅ Loading
   if (isLoading) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#007bff" />
-        <Text>Chargement...</Text>
-      </View>
+      <SafeAreaView style={styles.container} edges={["top"]}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#007bff" />
+          <Text>Chargement...</Text>
+        </View>
+      </SafeAreaView>
     );
   }
 
   // ✅ Erreur
   if (error) {
     return (
-      <View style={styles.errorContainer}>
-        <Ionicons name="alert-circle" size={50} color="#e74c3c" />
-        <Text style={styles.errorText}>{error}</Text>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-          <Ionicons name="arrow-back" size={20} color="#007bff" />
-          <Text style={styles.backBtnText}>Retour</Text>
-        </TouchableOpacity>
-      </View>
+      <SafeAreaView style={styles.container} edges={["top"]}>
+        <View style={styles.errorContainer}>
+          <Ionicons name="alert-circle" size={50} color="#e74c3c" />
+          <Text style={styles.errorText}>{error}</Text>
+          <TouchableOpacity
+            style={styles.backBtn}
+            onPress={() => router.back()}
+          >
+            <Ionicons name="arrow-back" size={20} color="#007bff" />
+            <Text style={styles.backBtnText}>Retour</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
     );
   }
 
   // ✅ Post non trouvé
   if (!post) {
     return (
-      <View style={styles.errorContainer}>
-        <Ionicons name="help-circle" size={50} color="#999" />
-        <Text style={styles.errorText}>Post non trouvé</Text>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-          <Ionicons name="arrow-back" size={20} color="#007bff" />
-          <Text style={styles.backBtnText}>Retour</Text>
-        </TouchableOpacity>
-      </View>
+      <SafeAreaView style={styles.container} edges={["top"]}>
+        <View style={styles.errorContainer}>
+          <Ionicons name="help-circle" size={50} color="#999" />
+          <Text style={styles.errorText}>Post non trouvé</Text>
+          <TouchableOpacity
+            style={styles.backBtn}
+            onPress={() => router.back()}
+          >
+            <Ionicons name="arrow-back" size={20} color="#007bff" />
+            <Text style={styles.backBtnText}>Retour</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
     );
   }
 
@@ -318,11 +338,14 @@ export default function PostDetail() {
   const isRejected = post.status === "rejected";
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-    >
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+    <SafeAreaView style={styles.container} edges={["top"]}>
+      <KeyboardAwareScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={styles.scrollContent}
+        enableOnAndroid={true}
+        extraScrollHeight={30}
+        keyboardShouldPersistTaps="handled"
+      >
         {/* ✅ Header avec bouton retour */}
         <View style={styles.header}>
           <TouchableOpacity
@@ -630,8 +653,8 @@ export default function PostDetail() {
             )}
           </View>
         )}
-      </ScrollView>
-    </KeyboardAvoidingView>
+      </KeyboardAwareScrollView>
+    </SafeAreaView>
   );
 }
 
@@ -642,7 +665,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     padding: 15,
-    paddingBottom: 50,
+    paddingBottom: 100,
   },
   loadingContainer: {
     flex: 1,
@@ -659,8 +682,6 @@ const styles = StyleSheet.create({
     color: "#e74c3c",
     fontSize: 16,
   },
-
-  // Header
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -677,16 +698,12 @@ const styles = StyleSheet.create({
     color: "#007bff",
     fontSize: 16,
   },
-
-  // Article
   article: {
     backgroundColor: "#f5f5f5",
     borderRadius: 15,
     padding: 15,
     marginBottom: 20,
   },
-
-  // Sous Header
   sousHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -723,8 +740,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "600",
   },
-
-  // Avatar
   avatar: {
     flexDirection: "row",
     alignItems: "center",
@@ -760,8 +775,6 @@ const styles = StyleSheet.create({
     color: "#999",
     fontSize: 12,
   },
-
-  // Content
   titre: {
     fontSize: 20,
     fontWeight: "bold",
@@ -778,8 +791,6 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     marginBottom: 15,
   },
-
-  // Event / Reco Info
   eventInfo: {
     backgroundColor: "#fff",
     borderRadius: 10,
@@ -816,8 +827,6 @@ const styles = StyleSheet.create({
     color: "#666",
     fontSize: 14,
   },
-
-  // Images
   imagesContainer: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -833,8 +842,6 @@ const styles = StyleSheet.create({
     width: "100%",
     height: 250,
   },
-
-  // Interaction
   interaction: {
     flexDirection: "row",
     gap: 20,
@@ -851,8 +858,6 @@ const styles = StyleSheet.create({
     color: "#666",
     fontSize: 14,
   },
-
-  // Pending / Rejected
   pendingContainer: {
     flexDirection: "row",
     alignItems: "center",
@@ -878,8 +883,6 @@ const styles = StyleSheet.create({
     color: "#721c24",
     flex: 1,
   },
-
-  // Comments Section
   commentsSection: {
     backgroundColor: "#f5f5f5",
     borderRadius: 15,
@@ -934,8 +937,6 @@ const styles = StyleSheet.create({
     textAlign: "center",
     paddingVertical: 20,
   },
-
-  // Comment Item
   commentItem: {
     backgroundColor: "#fff",
     borderRadius: 10,

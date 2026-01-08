@@ -26,7 +26,13 @@ const DRAWER_WIDTH = SCREEN_WIDTH * 0.75;
 
 export default function Events() {
   const router = useRouter();
-  const { token, user, logout } = useAuth();
+  const {
+    token,
+    user,
+    logout,
+    isAdmin: ctxIsAdmin,
+    isSuperAdmin: ctxIsSuperAdmin,
+  } = useAuth();
 
   const [data, setData] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -37,7 +43,12 @@ export default function Events() {
   const [menuVisible, setMenuVisible] = useState(false);
   const [slideAnim] = useState(new Animated.Value(-DRAWER_WIDTH));
 
-  const isAdmin = user?.role === "admin";
+  const isAdmin =
+    ctxIsAdmin || user?.roles?.includes?.("admin") || user?.role === "admin";
+  const isSuperAdmin =
+    ctxIsSuperAdmin ||
+    user?.roles?.includes?.("superAdmin") ||
+    user?.role === "superAdmin";
 
   // ✅ Ouvrir le menu
   const openMenu = () => {
@@ -81,26 +92,41 @@ export default function Events() {
 
     try {
       setIsLoading(true);
+
+      // ✅ Récupérer la ville de l'utilisateur
+      const cityParam = user?.city || "";
+
+      console.log("🚀 Fetch events - ville:", cityParam);
+
       const response = await axios.get(
         "https://api--tanjablabla--t4nqvl4d28d8.code.run/posts",
         {
           headers: {
             Authorization: `Bearer ${token}`,
           },
+          params: {
+            type: "event", // ✅ Filtrer côté API (plus performant)
+            ...(cityParam && { city: cityParam }), // ✅ Envoyer la ville
+          },
         }
       );
 
-      // ✅ Filtrer uniquement les events
-      const approvedEvents =
-        response.data.posts?.filter((post) => post.type === "event") || [];
+      console.log("✅ Réponse reçue:", response.data.success);
 
-      setData({ posts: approvedEvents });
+      // ✅ CORRECTION : Accéder à response.data.data.posts
+      const apiData = response.data.data || { posts: [] };
+
+      console.log("Events trouvés:", apiData.posts?.length);
+      console.log("Ville filtrée:", apiData.filteredByCity);
+
+      setData({ posts: apiData.posts || [] });
     } catch (error) {
-      console.log(error);
+      console.log("❌ Erreur:", error.response?.data || error.message);
+      setData({ posts: [] });
     } finally {
       setIsLoading(false);
     }
-  }, [token]);
+  }, [token, user?.city]); // ✅ Ajouter user?.city aux dépendances
 
   useEffect(() => {
     if (token) {
@@ -546,6 +572,23 @@ export default function Events() {
                   <Ionicons name="people-outline" size={24} color="#007bff" />
                   <Text style={[styles.drawerItemText, { color: "#007bff" }]}>
                     Gérer les utilisateurs
+                  </Text>
+                  <Ionicons name="chevron-forward" size={20} color="#007bff" />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.drawerItem}
+                  onPress={() => {
+                    closeMenu();
+                    router.push("/admin/pending-commerce");
+                  }}
+                >
+                  <Ionicons
+                    name="storefront-outline"
+                    size={24}
+                    color="#007bff"
+                  />
+                  <Text style={[styles.drawerItemText, { color: "#007bff" }]}>
+                    Commerces en attente
                   </Text>
                   <Ionicons name="chevron-forward" size={20} color="#007bff" />
                 </TouchableOpacity>

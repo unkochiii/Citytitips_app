@@ -1,4 +1,4 @@
-// app/admin/users.js
+// app/(tabs)/admin/users.js
 import React, { useState, useEffect, useCallback } from "react";
 import {
   View,
@@ -28,9 +28,10 @@ const ROLES = [
   },
 ];
 
+// ✅ Plus besoin du HOC car le _layout.js gère déjà l'accès admin
 export default function UsersPage() {
   const router = useRouter();
-  const { token, user: currentUser } = useAuth();
+  const { token, user: currentUser, refreshUser } = useAuth();
 
   const [users, setUsers] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -38,14 +39,17 @@ export default function UsersPage() {
   const [error, setError] = useState(null);
   const [updatingRole, setUpdatingRole] = useState(null);
 
-  // ✅ State pour le modal de sélection de rôle
   const [roleModalVisible, setRoleModalVisible] = useState(false);
   const [selectedUser, setSelectedUser] = useState(null);
 
-  const isAdmin =
-    currentUser?.role === "admin" || currentUser?.role === "superAdmin";
+  // ✅ Helper pour obtenir le rôle principal d'un user
+  const getPrimaryRole = (user) => {
+    if (user?.roles && Array.isArray(user.roles) && user.roles.length > 0) {
+      return user.roles[0];
+    }
+    return user?.role || "user";
+  };
 
-  // ✅ Récupérer les utilisateurs
   const fetchUsers = useCallback(async () => {
     if (!token) return;
 
@@ -60,30 +64,80 @@ export default function UsersPage() {
         }
       );
 
-      setUsers(response.data.data || []);
+      console.log(
+        "fetchUsers response.data:",
+        JSON.stringify(response.data, null, 2)
+      );
+
+      const payload = response.data || {};
+      let usersArray = [];
+
+      if (Array.isArray(payload.data)) usersArray = payload.data;
+      else if (Array.isArray(payload.users)) usersArray = payload.users;
+      else if (Array.isArray(payload.data?.users))
+        usersArray = payload.data.users;
+      else usersArray = [];
+
+      // ✅ Normaliser chaque user : s'assurer que roles est un array
+      const normalizedUsers = usersArray.map((u) => {
+        const roles = Array.isArray(u.roles)
+          ? u.roles
+          : u.role
+          ? [u.role]
+          : ["user"];
+        return {
+          ...u,
+          roles,
+        };
+      });
+
+      setUsers(normalizedUsers);
       setError(null);
     } catch (err) {
       console.error("Erreur:", err);
-      setError(
-        err.response?.data?.message ||
-          "Erreur lors de la récupération des utilisateurs"
-      );
+
+      if (err.response?.status === 401) {
+        Alert.alert(
+          "Session expirée",
+          "Votre session a expiré. Veuillez vous reconnecter.",
+          [{ text: "OK", onPress: () => router.replace("/(auth)/login") }]
+        );
+      } else if (err.response?.status === 403) {
+        const updated = refreshUser ? await refreshUser() : null;
+
+        const userRoles = updated?.roles || [];
+        const stillAdmin =
+          userRoles.includes("admin") || userRoles.includes("superAdmin");
+
+        if (updated && !stillAdmin) {
+          Alert.alert(
+            "Accès refusé",
+            "Votre rôle a changé et vous n'êtes plus administrateur.",
+            [{ text: "OK", onPress: () => router.replace("/(tabs)") }]
+          );
+        } else {
+          Alert.alert(
+            "Accès refusé",
+            "Vous n'avez pas les permissions nécessaires.",
+            [{ text: "OK", onPress: () => router.replace("/(tabs)") }]
+          );
+        }
+      } else {
+        setError(
+          err.response?.data?.message ||
+            "Erreur lors de la récupération des utilisateurs"
+        );
+      }
     } finally {
       setIsLoading(false);
     }
-  }, [token]);
+  }, [token, router, refreshUser]);
 
   useEffect(() => {
-    // Redirection si pas admin
-    if (!isAdmin) {
-      Alert.alert("Accès refusé", "Vous n'avez pas les droits d'accès", [
-        { text: "OK", onPress: () => router.replace("/(tabs)") },
-      ]);
-      return;
+    if (token) {
+      fetchUsers();
     }
-
-    fetchUsers();
-  }, [isAdmin, fetchUsers]);
+  }, [token, fetchUsers]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -91,20 +145,18 @@ export default function UsersPage() {
     setRefreshing(false);
   }, [fetchUsers]);
 
-  // ✅ Ouvrir le modal de sélection de rôle
   const openRoleModal = (user) => {
     setSelectedUser(user);
     setRoleModalVisible(true);
   };
 
-  // ✅ Modifier le rôle d'un utilisateur
   const handleRoleChange = async (newRole) => {
     if (!selectedUser) return;
 
     setRoleModalVisible(false);
 
-    // Si même rôle, ne rien faire
-    if (selectedUser.role === newRole) return;
+    const selectedRoles = selectedUser?.roles || [];
+    if (selectedRoles.includes(newRole)) return;
 
     Alert.alert(
       "Changer le rôle",
@@ -129,11 +181,10 @@ export default function UsersPage() {
                 }
               );
 
-              // Mettre à jour le state local
               setUsers((prevUsers) =>
                 prevUsers.map((user) =>
                   user._id === selectedUser._id
-                    ? { ...user, role: newRole }
+                    ? { ...user, roles: [newRole] }
                     : user
                 )
               );
@@ -144,7 +195,7 @@ export default function UsersPage() {
                 "Erreur",
                 err.response?.data?.message || "Erreur lors de la modification"
               );
-              fetchUsers(); // Refresh pour remettre l'ancienne valeur
+              fetchUsers();
             } finally {
               setUpdatingRole(null);
               setSelectedUser(null);
@@ -155,8 +206,15 @@ export default function UsersPage() {
     );
   };
 
-  // ✅ Supprimer un utilisateur
   const handleDelete = (userId, userEmail, username) => {
+    if (userId === currentUser._id) {
+      Alert.alert(
+        "Erreur",
+        "Vous ne pouvez pas supprimer votre propre compte."
+      );
+      return;
+    }
+
     Alert.alert(
       "Supprimer l'utilisateur",
       `Êtes-vous sûr de vouloir supprimer ${
@@ -194,8 +252,8 @@ export default function UsersPage() {
     );
   };
 
-  // ✅ Obtenir le style du rôle
-  const getRoleStyle = (role) => {
+  const getRoleStyle = (user) => {
+    const role = getPrimaryRole(user);
     const roleConfig = ROLES.find((r) => r.value === role) || ROLES[0];
     return {
       backgroundColor: roleConfig.color,
@@ -204,14 +262,11 @@ export default function UsersPage() {
     };
   };
 
-  // Si pas admin, ne rien afficher
-  if (!isAdmin) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#007bff" />
-      </View>
-    );
-  }
+  const getCurrentRoleBadge = () => {
+    const primaryRole = getPrimaryRole(currentUser);
+    const roleConfig = ROLES.find((r) => r.value === primaryRole);
+    return roleConfig || ROLES[0];
+  };
 
   if (isLoading && !refreshing) {
     return (
@@ -222,17 +277,36 @@ export default function UsersPage() {
     );
   }
 
+  const currentRoleBadge = getCurrentRoleBadge();
+
   return (
     <View style={styles.container}>
-      {/* ✅ Header */}
+      {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()}>
           <Ionicons name="arrow-back" size={24} color="#333" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Gestion des utilisateurs</Text>
-        <TouchableOpacity onPress={onRefresh}>
-          <Ionicons name="refresh" size={24} color="#007bff" />
-        </TouchableOpacity>
+        <View style={styles.headerRight}>
+          <View
+            style={[
+              styles.adminBadge,
+              { backgroundColor: currentRoleBadge.color },
+            ]}
+          >
+            <Text
+              style={[
+                styles.adminBadgeText,
+                { color: currentRoleBadge.textColor },
+              ]}
+            >
+              {currentRoleBadge.label}
+            </Text>
+          </View>
+          <TouchableOpacity onPress={onRefresh}>
+            <Ionicons name="refresh" size={24} color="#007bff" />
+          </TouchableOpacity>
+        </View>
       </View>
 
       <ScrollView
@@ -242,15 +316,25 @@ export default function UsersPage() {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
       >
-        {/* ✅ Compteur */}
-        <View style={styles.countContainer}>
-          <Ionicons name="people" size={20} color="#4a5568" />
-          <Text style={styles.countText}>
-            Total: {users.length} utilisateur{users.length > 1 ? "s" : ""}
+        {/* Info utilisateur connecté */}
+        <View style={styles.userInfoContainer}>
+          <Ionicons name="person-circle-outline" size={16} color="#007bff" />
+          <Text style={styles.userInfoText}>
+            Connecté : {currentUser?.username || currentUser?.account?.username}{" "}
+            ({getPrimaryRole(currentUser)})
           </Text>
         </View>
 
-        {/* ✅ Message d'erreur */}
+        {/* Compteur */}
+        <View style={styles.countContainer}>
+          <Ionicons name="people" size={20} color="#4a5568" />
+          <Text style={styles.countText}>
+            Total: {users?.length || 0} utilisateur
+            {(users?.length || 0) > 1 ? "s" : ""}
+          </Text>
+        </View>
+
+        {/* Message d'erreur */}
         {error ? (
           <View style={styles.errorContainer}>
             <Ionicons name="warning-outline" size={20} color="#721c24" />
@@ -258,91 +342,121 @@ export default function UsersPage() {
           </View>
         ) : null}
 
-        {/* ✅ Message si aucun utilisateur */}
-        {users.length === 0 && !error ? (
+        {/* Message si aucun utilisateur */}
+        {(!Array.isArray(users) || users.length === 0) && !error ? (
           <View style={styles.noResults}>
             <Ionicons name="people-outline" size={60} color="#999" />
             <Text style={styles.noResultsText}>Aucun utilisateur trouvé</Text>
           </View>
         ) : null}
 
-        {/* ✅ Liste des utilisateurs */}
-        {users.map((user) => {
-          const roleStyle = getRoleStyle(user.role);
-          const isUpdating = updatingRole === user._id;
+        {/* Liste des utilisateurs */}
+        {Array.isArray(users) &&
+          users.map((user) => {
+            const roleStyle = getRoleStyle(user);
+            const isUpdating = updatingRole === user._id;
+            const isCurrentUser = user._id === currentUser._id;
 
-          return (
-            <View key={user._id} style={styles.userCard}>
-              {/* Profil */}
-              <View style={styles.userProfile}>
-                {user?.account?.avatar?.secure_url ? (
-                  <Image
-                    source={{ uri: user.account.avatar.secure_url }}
-                    style={styles.avatar}
-                  />
-                ) : (
-                  <View style={styles.avatarPlaceholder}>
-                    <Text style={styles.avatarPlaceholderText}>
-                      {user?.account?.username?.charAt(0).toUpperCase() || "?"}
-                    </Text>
+            return (
+              <View
+                key={user._id}
+                style={[
+                  styles.userCard,
+                  isCurrentUser && styles.currentUserCard,
+                ]}
+              >
+                {/* Badge "Vous" si c'est l'utilisateur connecté */}
+                {isCurrentUser && (
+                  <View style={styles.youBadge}>
+                    <Text style={styles.youBadgeText}>Vous</Text>
                   </View>
                 )}
 
-                <View style={styles.userInfo}>
-                  <Text style={styles.username}>
-                    {user.account?.username || "Sans nom"}
-                  </Text>
-                  <Text style={styles.email}>{user.email || "-"}</Text>
-                </View>
-              </View>
+                {/* Profil */}
+                <View style={styles.userProfile}>
+                  {user?.account?.avatar?.secure_url ? (
+                    <Image
+                      source={{ uri: user.account.avatar.secure_url }}
+                      style={styles.avatar}
+                    />
+                  ) : (
+                    <View style={styles.avatarPlaceholder}>
+                      <Text style={styles.avatarPlaceholderText}>
+                        {user?.account?.username?.charAt(0).toUpperCase() ||
+                          "?"}
+                      </Text>
+                    </View>
+                  )}
 
-              {/* Rôle */}
-              <TouchableOpacity
-                style={[
-                  styles.roleButton,
-                  { backgroundColor: roleStyle.backgroundColor },
-                ]}
-                onPress={() => openRoleModal(user)}
-                disabled={isUpdating}
-              >
-                {isUpdating ? (
-                  <ActivityIndicator size="small" color={roleStyle.textColor} />
-                ) : (
-                  <>
-                    <Text
-                      style={[styles.roleText, { color: roleStyle.textColor }]}
-                    >
-                      {roleStyle.label}
+                  <View style={styles.userInfo}>
+                    <Text style={styles.username}>
+                      {user.account?.username || "Sans nom"}
                     </Text>
-                    <Ionicons
-                      name="chevron-down"
-                      size={16}
+                    <Text style={styles.email}>{user.email || "-"}</Text>
+                  </View>
+                </View>
+
+                {/* Rôle */}
+                <TouchableOpacity
+                  style={[
+                    styles.roleButton,
+                    { backgroundColor: roleStyle.backgroundColor },
+                  ]}
+                  onPress={() => openRoleModal(user)}
+                  disabled={isUpdating || isCurrentUser}
+                >
+                  {isUpdating ? (
+                    <ActivityIndicator
+                      size="small"
                       color={roleStyle.textColor}
                     />
-                  </>
-                )}
-              </TouchableOpacity>
-
-              {/* Actions */}
-              <View style={styles.actions}>
-                <TouchableOpacity
-                  style={styles.deleteBtn}
-                  onPress={() =>
-                    handleDelete(user._id, user.email, user.account?.username)
-                  }
-                >
-                  <Ionicons name="trash-outline" size={20} color="#fff" />
+                  ) : (
+                    <>
+                      <Text
+                        style={[
+                          styles.roleText,
+                          { color: roleStyle.textColor },
+                        ]}
+                      >
+                        {roleStyle.label}
+                      </Text>
+                      {!isCurrentUser && (
+                        <Ionicons
+                          name="chevron-down"
+                          size={16}
+                          color={roleStyle.textColor}
+                        />
+                      )}
+                    </>
+                  )}
                 </TouchableOpacity>
+
+                {/* Actions - masquer pour l'utilisateur actuel */}
+                {!isCurrentUser && (
+                  <View style={styles.actions}>
+                    <TouchableOpacity
+                      style={styles.deleteBtn}
+                      onPress={() =>
+                        handleDelete(
+                          user._id,
+                          user.email,
+                          user.account?.username
+                        )
+                      }
+                    >
+                      <Ionicons name="trash-outline" size={20} color="#fff" />
+                    </TouchableOpacity>
+                  </View>
+                )}
               </View>
-            </View>
-          );
-        })}
+            );
+          })}
 
         {/* Espace en bas */}
         <View style={styles.bottomSpacer} />
       </ScrollView>
 
-      {/* ✅ Modal de sélection de rôle */}
+      {/* Modal de sélection de rôle */}
       <Modal
         visible={roleModalVisible}
         transparent
@@ -364,7 +478,8 @@ export default function UsersPage() {
 
             <View style={styles.roleOptions}>
               {ROLES.map((role) => {
-                const isSelected = selectedUser?.role === role.value;
+                const selectedRoles = selectedUser?.roles || [];
+                const isSelected = selectedRoles.includes(role.value);
 
                 return (
                   <TouchableOpacity
@@ -438,6 +553,38 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: "bold",
     color: "#333",
+    flex: 1,
+    marginLeft: 10,
+  },
+  headerRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  adminBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+  },
+  adminBadgeText: {
+    fontSize: 10,
+    fontWeight: "bold",
+  },
+
+  // ========== USER INFO ==========
+  userInfoContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#e3f2fd",
+    padding: 10,
+    borderRadius: 10,
+    marginBottom: 10,
+    gap: 8,
+  },
+  userInfoText: {
+    fontSize: 12,
+    color: "#007bff",
+    fontWeight: "500",
   },
 
   // ========== SCROLL ==========
@@ -502,6 +649,25 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 3,
     elevation: 2,
+  },
+  currentUserCard: {
+    borderWidth: 2,
+    borderColor: "#007bff",
+    backgroundColor: "#f8fbff",
+  },
+  youBadge: {
+    position: "absolute",
+    top: 10,
+    right: 10,
+    backgroundColor: "#007bff",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  youBadgeText: {
+    color: "#fff",
+    fontSize: 10,
+    fontWeight: "bold",
   },
   userProfile: {
     flexDirection: "row",

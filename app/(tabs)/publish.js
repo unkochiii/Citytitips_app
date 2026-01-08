@@ -1,29 +1,59 @@
 // app/(tabs)/publish.js
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
   TextInput,
   TouchableOpacity,
   StyleSheet,
-  ScrollView,
   Image,
   Alert,
   ActivityIndicator,
-  Platform,
   Modal,
   Animated,
   Dimensions,
   Pressable,
+  ScrollView,
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import axios from "axios";
 import { useRouter } from "expo-router";
 import { useAuth } from "../../context/AuthContext";
 import { Ionicons, FontAwesome } from "@expo/vector-icons";
+import { KeyboardAwareScrollView } from "react-native-keyboard-aware-scroll-view";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const DRAWER_WIDTH = SCREEN_WIDTH * 0.75;
+
+// ✅ Liste des villes valides (doit correspondre au backend)
+const VALID_CITIES = [
+  "Tanger",
+  "Tétouan",
+  "Casablanca",
+  "Rabat",
+  "Marrakech",
+  "Fès",
+  "Meknès",
+  "Agadir",
+  "Oujda",
+  "Kenitra",
+  "El Jadida",
+  "Safi",
+  "Mohammedia",
+  "Khouribga",
+  "Béni Mellal",
+  "Nador",
+  "Taza",
+  "Settat",
+  "Berrechid",
+  "Khemisset",
+  "Larache",
+  "Ksar El Kebir",
+  "Guelmim",
+  "Errachidia",
+  "Ouarzazate",
+  "Thue & Mue",
+];
 
 export default function Publish() {
   const router = useRouter();
@@ -44,13 +74,21 @@ export default function Publish() {
   const [isLoading, setIsLoading] = useState(false);
   const [message, setMessage] = useState({ type: "", text: "" });
 
-  // ✅ State pour le menu burger
   const [menuVisible, setMenuVisible] = useState(false);
   const [slideAnim] = useState(new Animated.Value(-DRAWER_WIDTH));
 
-  const isAdmin = user?.role === "admin";
+  // ✅ Vérifier roles (array)
+  const userRoles = user?.roles || [];
+  const isAdmin =
+    userRoles.includes("admin") || userRoles.includes("superAdmin");
 
-  // ✅ Ouvrir le menu
+  // ✅ CORRECTION : Redirection dans useEffect (pas pendant le rendu)
+  useEffect(() => {
+    if (!token) {
+      router.replace("/(auth)/login");
+    }
+  }, [token, router]);
+
   const openMenu = () => {
     setMenuVisible(true);
     Animated.timing(slideAnim, {
@@ -60,7 +98,6 @@ export default function Publish() {
     }).start();
   };
 
-  // ✅ Fermer le menu
   const closeMenu = () => {
     Animated.timing(slideAnim, {
       toValue: -DRAWER_WIDTH,
@@ -71,7 +108,6 @@ export default function Publish() {
     });
   };
 
-  // ✅ Fonction de déconnexion
   const handleLogout = () => {
     Alert.alert("Déconnexion", "Voulez-vous vraiment vous déconnecter ?", [
       { text: "Annuler", style: "cancel" },
@@ -123,7 +159,6 @@ export default function Publish() {
     }));
   };
 
-  // ✅ Sélection d'images avec expo-image-picker
   const pickImages = async () => {
     const maxImages = 5;
 
@@ -160,7 +195,6 @@ export default function Publish() {
     }
   };
 
-  // ✅ Prendre une photo
   const takePhoto = async () => {
     const maxImages = 5;
 
@@ -210,7 +244,27 @@ export default function Publish() {
     ]);
   };
 
+  // ✅ Fonction pour trouver la ville valide
+  const findValidCity = (cityInput) => {
+    if (!cityInput) return null;
+
+    const inputLower = cityInput.toString().trim().toLowerCase();
+
+    // Chercher une correspondance exacte (insensible à la casse)
+    const exactMatch = VALID_CITIES.find((c) => c.toLowerCase() === inputLower);
+    if (exactMatch) return exactMatch;
+
+    // Chercher si la ville est contenue dans l'input
+    const partialMatch = VALID_CITIES.find((c) =>
+      inputLower.includes(c.toLowerCase())
+    );
+    if (partialMatch) return partialMatch;
+
+    return null;
+  };
+
   const handleSubmit = async () => {
+    console.log("==================");
     if (!formData.type) {
       setMessage({
         type: "error",
@@ -235,12 +289,55 @@ export default function Publish() {
     try {
       const data = new FormData();
 
+      // ✅ Déterminer la ville correctement
+      let derivedCity = null;
+
+      // 1. Essayer d'extraire depuis le champ 'lieu'
+      if (formData.lieu) {
+        derivedCity = findValidCity(formData.lieu);
+      }
+
+      // 2. Sinon, utiliser la ville de l'utilisateur
+      if (!derivedCity && user?.city) {
+        derivedCity = findValidCity(user.city);
+      }
+
+      console.log("=== DEBUG CITY ===");
+      console.log("user.city:", user?.city);
+      console.log("formData.lieu:", formData.lieu);
+      console.log("derivedCity:", derivedCity);
+      console.log("==================");
+
+      // ✅ Vérifier qu'on a une ville valide
+      if (!derivedCity) {
+        setMessage({
+          type: "error",
+          text: "Impossible de déterminer la ville. Vérifiez votre profil ou le lieu saisi.",
+        });
+        setIsLoading(false);
+        return;
+      }
+
+      console.log("=== DEBUG FINAL ===");
+      console.log("user.city:", user?.city);
+      console.log("derivedCity:", derivedCity);
+
+      // Afficher tout ce qui est dans le FormData
+      if (data._parts) {
+        console.log("FormData _parts:", JSON.stringify(data._parts, null, 2));
+      }
+
+      // Ajouter la ville au FormData
+      data.append("city", derivedCity);
+
+      // Ajouter les autres champs du formulaire
       Object.keys(formData).forEach((key) => {
-        if (formData[key]) {
+        if (formData[key] && formData[key].toString().trim()) {
           data.append(key, formData[key]);
         }
       });
 
+      // Ajouter les images
       images.forEach((image) => {
         data.append("images", {
           uri: image.uri,
@@ -248,6 +345,10 @@ export default function Publish() {
           name: image.name || `image_${Date.now()}.jpg`,
         });
       });
+
+      console.log("=== ENVOI POST ===");
+      console.log("City envoyée:", derivedCity);
+      console.log("==================");
 
       const response = await axios.post(
         "https://api--tanjablabla--t4nqvl4d28d8.code.run/post",
@@ -281,20 +382,32 @@ export default function Publish() {
         router.push("/");
       }, 2000);
     } catch (error) {
-      console.log("Erreur:", error);
+      console.error("Erreur création post:", error);
+      console.error(
+        "error.response?.data:",
+        JSON.stringify(error.response?.data, null, 2)
+      );
+
+      const serverMessage =
+        error.response?.data?.message || error.response?.data?.error || null;
+
       setMessage({
         type: "error",
-        text:
-          error.response?.data?.message || "Erreur lors de la création du post",
+        text: serverMessage || "Erreur lors de la création du post",
       });
     } finally {
       setIsLoading(false);
     }
   };
 
+  // ✅ CORRECTION : Afficher un loader pendant la redirection (au lieu de router.replace dans le rendu)
   if (!token) {
-    router.replace("/(auth)/login");
-    return null;
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#007bff" />
+        <Text style={styles.loadingText}>Redirection...</Text>
+      </View>
+    );
   }
 
   return (
@@ -310,18 +423,20 @@ export default function Publish() {
         </View>
 
         <View style={styles.headerRight}>
-          {isAdmin ? (
+          {isAdmin && (
             <View style={styles.adminBadge}>
               <Text style={styles.adminBadgeText}>Admin</Text>
             </View>
-          ) : null}
+          )}
         </View>
       </View>
 
-      {/* ✅ CONTENU PRINCIPAL */}
-      <ScrollView
+      {/* ✅ CONTENU PRINCIPAL avec KeyboardAwareScrollView */}
+      <KeyboardAwareScrollView
         style={styles.container}
         contentContainerStyle={styles.scrollContent}
+        enableOnAndroid={true}
+        extraScrollHeight={30}
         keyboardShouldPersistTaps="handled"
       >
         <View style={styles.publishCard}>
@@ -596,9 +711,8 @@ export default function Publish() {
             </>
           )}
         </View>
-      </ScrollView>
+      </KeyboardAwareScrollView>
 
-      {/* ✅ MENU BURGER (Drawer) */}
       {/* ✅ MENU BURGER (Drawer) */}
       <Modal
         visible={menuVisible}
@@ -606,17 +720,13 @@ export default function Publish() {
         animationType="none"
         onRequestClose={closeMenu}
       >
-        {/* Overlay sombre */}
         <Pressable style={styles.overlay} onPress={closeMenu} />
 
-        {/* Panneau latéral */}
         <Animated.View
           style={[styles.drawer, { transform: [{ translateX: slideAnim }] }]}
         >
-          {/* Header du menu */}
           <View style={styles.drawerHeader}>
             <View style={styles.drawerProfile}>
-              {/* ✅ CORRECTION : user.avatar au lieu de user.account.avatar */}
               {user?.avatar?.secure_url ? (
                 <Image
                   source={{ uri: user.avatar.secure_url }}
@@ -625,17 +735,14 @@ export default function Publish() {
               ) : (
                 <View style={styles.drawerAvatarPlaceholder}>
                   <Text style={styles.drawerAvatarText}>
-                    {/* ✅ CORRECTION : user.username au lieu de user.account.username */}
                     {user?.username?.charAt(0).toUpperCase() || "?"}
                   </Text>
                 </View>
               )}
               <View style={styles.drawerUserInfo}>
-                {/* ✅ CORRECTION : user.username */}
                 <Text style={styles.drawerUsername}>
                   {user?.username || "Utilisateur"}
                 </Text>
-                {/* ✅ CORRECTION : user.city (pas d'email dans la réponse API) */}
                 <Text style={styles.drawerEmail}>{user?.city || ""}</Text>
               </View>
             </View>
@@ -644,9 +751,7 @@ export default function Publish() {
             </TouchableOpacity>
           </View>
 
-          {/* Items du menu */}
           <ScrollView style={styles.drawerContent}>
-            {/* Profil */}
             <TouchableOpacity
               style={styles.drawerItem}
               onPress={() => {
@@ -659,7 +764,6 @@ export default function Publish() {
               <Ionicons name="chevron-forward" size={20} color="#999" />
             </TouchableOpacity>
 
-            {/* Paramètres */}
             <TouchableOpacity
               style={styles.drawerItem}
               onPress={() => {
@@ -672,11 +776,9 @@ export default function Publish() {
               <Ionicons name="chevron-forward" size={20} color="#999" />
             </TouchableOpacity>
 
-            {/* Séparateur */}
             <View style={styles.drawerSeparator} />
 
-            {/* Section Admin (si admin) */}
-            {isAdmin ? (
+            {isAdmin && (
               <>
                 <Text style={styles.drawerSectionTitle}>Administration</Text>
 
@@ -684,7 +786,7 @@ export default function Publish() {
                   style={styles.drawerItem}
                   onPress={() => {
                     closeMenu();
-                    router.push("/admin/pending-posts");
+                    router.push("/(tabs)/admin/pending-posts");
                   }}
                 >
                   <Ionicons name="time-outline" size={24} color="#007bff" />
@@ -698,7 +800,7 @@ export default function Publish() {
                   style={styles.drawerItem}
                   onPress={() => {
                     closeMenu();
-                    router.push("/admin/users");
+                    router.push("/(tabs)/admin/users");
                   }}
                 >
                   <Ionicons name="people-outline" size={24} color="#007bff" />
@@ -708,11 +810,28 @@ export default function Publish() {
                   <Ionicons name="chevron-forward" size={20} color="#007bff" />
                 </TouchableOpacity>
 
+                <TouchableOpacity
+                  style={styles.drawerItem}
+                  onPress={() => {
+                    closeMenu();
+                    router.push("/(tabs)/admin/pending-commerce");
+                  }}
+                >
+                  <Ionicons
+                    name="storefront-outline"
+                    size={24}
+                    color="#007bff"
+                  />
+                  <Text style={[styles.drawerItemText, { color: "#007bff" }]}>
+                    Commerces en attente
+                  </Text>
+                  <Ionicons name="chevron-forward" size={20} color="#007bff" />
+                </TouchableOpacity>
+
                 <View style={styles.drawerSeparator} />
               </>
-            ) : null}
+            )}
 
-            {/* À propos */}
             <TouchableOpacity
               style={styles.drawerItem}
               onPress={() => {
@@ -729,7 +848,6 @@ export default function Publish() {
               <Ionicons name="chevron-forward" size={20} color="#999" />
             </TouchableOpacity>
 
-            {/* Aide */}
             <TouchableOpacity
               style={styles.drawerItem}
               onPress={() => {
@@ -743,7 +861,6 @@ export default function Publish() {
             </TouchableOpacity>
           </ScrollView>
 
-          {/* Footer du menu - Déconnexion */}
           <View style={styles.drawerFooter}>
             <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
               <Ionicons name="log-out-outline" size={24} color="#e74c3c" />
@@ -759,12 +876,22 @@ export default function Publish() {
 }
 
 const styles = StyleSheet.create({
+  // ✅ NOUVEAU : Styles pour le loading
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#fff",
+  },
+  loadingText: {
+    marginTop: 10,
+    color: "#666",
+    fontSize: 14,
+  },
   mainContainer: {
     flex: 1,
     backgroundColor: "#fff",
   },
-
-  // ✅ Header
   header: {
     flexDirection: "row",
     alignItems: "center",
@@ -805,8 +932,6 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: "bold",
   },
-
-  // ✅ Drawer
   overlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: "rgba(0, 0, 0, 0.5)",
@@ -923,21 +1048,17 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginTop: 15,
   },
-
-  // ✅ Container & Content
   container: {
     flex: 1,
     backgroundColor: "#fff",
   },
   scrollContent: {
     padding: 15,
-    paddingBottom: 50,
+    paddingBottom: 100,
   },
   publishCard: {
     gap: 15,
   },
-
-  // Message
   message: {
     padding: 15,
     borderRadius: 10,
@@ -953,8 +1074,6 @@ const styles = StyleSheet.create({
     textAlign: "center",
     fontSize: 14,
   },
-
-  // Form Group
   formGroup: {
     gap: 8,
     borderBottomWidth: 1,
@@ -975,8 +1094,6 @@ const styles = StyleSheet.create({
     color: "#e74c3c",
     fontSize: 12,
   },
-
-  // Type Buttons
   typeButtonsContainer: {
     flexGrow: 0,
   },
@@ -1004,8 +1121,6 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: "#999",
   },
-
-  // Inputs
   input: {
     borderWidth: 1,
     borderColor: "#ddd",
@@ -1027,8 +1142,6 @@ const styles = StyleSheet.create({
     color: "#999",
     marginTop: 2,
   },
-
-  // Images
   imagesContainer: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -1091,19 +1204,13 @@ const styles = StyleSheet.create({
     color: "#bbb",
     textAlign: "center",
   },
-
-  // Event Fields
   eventFields: {
     gap: 15,
   },
-
-  // Stars
   starsContainer: {
     flexDirection: "row",
     gap: 10,
   },
-
-  // Submit Button
   submitBtn: {
     backgroundColor: "#007bff",
     paddingVertical: 15,
@@ -1119,8 +1226,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "bold",
   },
-
-  // Info Text
   infoText: {
     color: "rgb(212, 87, 87)",
     fontStyle: "italic",
