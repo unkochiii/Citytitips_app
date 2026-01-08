@@ -15,7 +15,7 @@
     "@react-native-picker/picker": "^2.11.1",
     "@somesoap/react-native-image-palette": "^1.2.2",
     "axios": "^1.13.2",
-    "expo": "~54.0.27",
+    "expo": "~54.0.31",
     "expo-constants": "~18.0.11",
     "expo-font": "~14.0.10",
     "expo-image": "^3.0.11",

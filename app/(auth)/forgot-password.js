@@ -69,11 +69,17 @@ const ForgotPassword = () => {
         email: email.trim(),
       });
 
-      setSuccessMessage(response.data.message);
+      // ✅ CORRECTION : Accéder au message correctement
+      const message =
+        response.data.message || response.data.data?.message || "Code envoyé !";
+
+      console.log("✅ Forgot password response:", response.data);
+
+      setSuccessMessage(message);
       setStep(2);
-      setResendTimer(60); // 60 secondes avant de pouvoir renvoyer
+      setResendTimer(60);
     } catch (error) {
-      console.log("Forgot password error:", error);
+      console.log("Forgot password error:", error.response?.data);
       if (error.response) {
         setErrorMessage(error.response.data.message);
       } else {
@@ -128,17 +134,33 @@ const ForgotPassword = () => {
         code: fullCode,
       });
 
+      // ✅ DEBUG : Voir la réponse complète
+      console.log("========== DEBUG VERIFY CODE ==========");
+      console.log("Response:", JSON.stringify(response.data, null, 2));
+      console.log("=======================================");
+
+      // ✅ CORRECTION : Accéder à response.data.data
+      const apiData = response.data.data || response.data;
+
+      console.log("ResetToken reçu:", apiData.resetToken);
+
+      if (!apiData.resetToken) {
+        setErrorMessage("Erreur: Token non reçu du serveur");
+        return;
+      }
+
       setSuccessMessage("Code vérifié !");
-      setResetToken(response.data.resetToken);
+      setResetToken(apiData.resetToken); // ✅ CORRIGÉ
       setStep(3);
     } catch (error) {
       console.log("Verify code error:", error);
+      console.log("Error response:", error.response?.data);
+
       if (error.response) {
         setErrorMessage(error.response.data.message);
         if (error.response.data.attemptsLeft !== undefined) {
           setAttemptsLeft(error.response.data.attemptsLeft);
         }
-        // Si trop de tentatives, retourner à l'étape 1
         if (error.response.status === 429) {
           setStep(1);
           setCode(["", "", "", "", "", ""]);
@@ -190,7 +212,19 @@ const ForgotPassword = () => {
       return;
     }
 
+    // ✅ Vérifier que le resetToken existe
+    if (!resetToken) {
+      setErrorMessage("Session expirée. Veuillez recommencer.");
+      setStep(1);
+      return;
+    }
+
     setLoading(true);
+
+    console.log("========== DEBUG RESET PASSWORD ==========");
+    console.log("Email:", email.trim());
+    console.log("ResetToken:", resetToken);
+    console.log("==========================================");
 
     try {
       const response = await axios.post(`${API_URL}/user/reset-password`, {
@@ -199,43 +233,44 @@ const ForgotPassword = () => {
         newPassword: newPassword,
       });
 
-      setSuccessMessage("Mot de passe modifié avec succès !");
+      console.log("✅ Reset response:", response.data);
 
-      // Connecter automatiquement l'utilisateur
-      if (response.data.token) {
+      // ✅ CORRECTION : Accéder à response.data.data
+      const apiData = response.data.data || response.data;
+      const message = response.data.message || "Mot de passe modifié !";
+
+      setSuccessMessage(message);
+
+      if (apiData.token) {
         await loginUser({
-          token: response.data.token,
+          token: apiData.token,
           email: email,
         });
 
         Alert.alert(
           "Succès",
           "Votre mot de passe a été modifié. Vous êtes maintenant connecté.",
-          [
-            {
-              text: "OK",
-              onPress: () => router.replace("/"),
-            },
-          ]
+          [{ text: "OK", onPress: () => router.replace("/") }]
         );
       } else {
         Alert.alert(
           "Succès",
           "Votre mot de passe a été modifié. Vous pouvez maintenant vous connecter.",
-          [
-            {
-              text: "OK",
-              onPress: () => router.replace("/(auth)/login"),
-            },
-          ]
+          [{ text: "OK", onPress: () => router.replace("/(auth)/login") }]
         );
       }
     } catch (error) {
-      console.log("Reset password error:", error);
+      console.log("========== DEBUG ERROR ==========");
+      console.log("Status:", error.response?.status);
+      console.log("Data:", JSON.stringify(error.response?.data, null, 2));
+      console.log("=================================");
+
       if (error.response) {
         setErrorMessage(error.response.data.message);
-        // Si token expiré, recommencer
-        if (error.response.data.message.includes("expired")) {
+        if (
+          error.response.data.message?.includes("expiré") ||
+          error.response.data.message?.includes("invalide")
+        ) {
           setStep(1);
           setCode(["", "", "", "", "", ""]);
           setResetToken("");

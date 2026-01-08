@@ -72,7 +72,6 @@ export default function TabsLayout() {
         }}
       />
 
-      {/* ❌ SUPPRIMER CES LIGNES - géré par commerce/_layout.js maintenant
       <Tabs.Screen
         name="commerce/create"
         options={{
@@ -85,7 +84,6 @@ export default function TabsLayout() {
           href: null,
         }}
       />
-      */}
     </Tabs>
   );
 }
