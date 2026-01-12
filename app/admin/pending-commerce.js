@@ -1,5 +1,5 @@
 // app/(tabs)/admin/pending-commerce.js
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   View,
   Text,
@@ -15,20 +15,19 @@ import {
   SafeAreaView,
   StatusBar,
   ScrollView,
+  Keyboard,
+  TouchableWithoutFeedback,
+  Platform,
+  Dimensions,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import axios from "axios";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter } from "expo-router";
-import { useAuth } from "../../context/AuthContext"; // ✅ Chemin corrigé
-import { withAdminOnly } from "../components/withAdminAccess"; // ✅ Import du HOC
+import { useAuth } from "../../context/AuthContext";
 
 // ==================== CONFIGURATION API ====================
 const API_BASE_URL = "https://api--tanjablabla--t4nqvl4d28d8.code.run";
-
-const api = axios.create({
-  baseURL: API_BASE_URL,
-  timeout: 10000,
-});
+const { height: SCREEN_HEIGHT } = Dimensions.get("window");
 
 // ==================== CONSTANTES ====================
 const STATUS_CONFIG = {
@@ -45,14 +44,83 @@ const TABS = [
   { key: "all", label: "Tous" },
 ];
 
+// ==================== HELPER FUNCTIONS ====================
+const checkIsAdmin = (user) => {
+  if (!user) return false;
+  const userRoles = user?.roles || [];
+  return userRoles.includes("admin") || userRoles.includes("superAdmin");
+};
+
+const getUserDisplayName = (user) => {
+  return user?.username || user?.account?.username || user?.name || "Admin";
+};
+
+const getUserRoleDisplay = (user) => {
+  const roles = user?.roles || [];
+  if (roles.includes("superAdmin")) return "Super Admin";
+  if (roles.includes("admin")) return "Admin";
+  return roles[0] || "Utilisateur";
+};
+
+// ✅ Nettoyer le token (fix Android)
+const cleanToken = (token) => {
+  if (!token) return null;
+  let cleaned = token;
+  if (typeof cleaned !== "string") cleaned = String(cleaned);
+  if (cleaned.startsWith('"') && cleaned.endsWith('"'))
+    cleaned = cleaned.slice(1, -1);
+  cleaned = cleaned
+    .replace(/\\"/g, '"')
+    .trim()
+    .replace(/[\r\n\t\s]/g, "");
+  return cleaned || null;
+};
+
+// ==================== HOOK POUR LE CLAVIER ====================
+const useKeyboardHeight = () => {
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
+
+  useEffect(() => {
+    const showEvent =
+      Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
+    const hideEvent =
+      Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
+
+    const showSubscription = Keyboard.addListener(showEvent, (e) => {
+      setKeyboardHeight(e.endCoordinates.height);
+      setIsKeyboardVisible(true);
+    });
+
+    const hideSubscription = Keyboard.addListener(hideEvent, () => {
+      setKeyboardHeight(0);
+      setIsKeyboardVisible(false);
+    });
+
+    return () => {
+      showSubscription.remove();
+      hideSubscription.remove();
+    };
+  }, []);
+
+  return { keyboardHeight, isKeyboardVisible };
+};
+
 // ==================== COMPOSANT PRINCIPAL ====================
-function PendingCommerce() {
+export default function PendingCommerce() {
   const router = useRouter();
-  const { user, token, refreshUser } = useAuth(); // ✅ Plus besoin de isLoading
+  const {
+    user,
+    token,
+    isLoading: authLoading,
+    isTokenReady,
+    logout,
+  } = useAuth();
+  const { keyboardHeight, isKeyboardVisible } = useKeyboardHeight();
 
-  // ✅ SUPPRIMÉ : Les vérifications authLoading et user.role (le HOC s'en charge)
+  const isAdmin = checkIsAdmin(user);
+  const isMounted = useRef(false);
 
-  // États
   const [commerces, setCommerces] = useState([]);
   const [stats, setStats] = useState({
     pending: 0,
@@ -68,154 +136,181 @@ function PendingCommerce() {
   const [totalPages, setTotalPages] = useState(1);
   const [adminCities, setAdminCities] = useState([]);
 
-  // Modal states
   const [selectedCommerce, setSelectedCommerce] = useState(null);
   const [detailModalVisible, setDetailModalVisible] = useState(false);
   const [rejectModalVisible, setRejectModalVisible] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
 
-  // Intercepteur simplifié avec le token du context
   useEffect(() => {
-    const requestInterceptor = api.interceptors.request.use(
-      (config) => {
-        if (token) {
-          config.headers.Authorization = `Bearer ${token}`;
-        }
-        return config;
-      },
-      (error) => Promise.reject(error)
-    );
-
+    isMounted.current = true;
     return () => {
-      api.interceptors.request.eject(requestInterceptor);
+      isMounted.current = false;
     };
+  }, []);
+
+  // ✅ Fonction pour obtenir un token valide et nettoyé
+  const getValidToken = useCallback(async () => {
+    let currentToken = cleanToken(token);
+    if (currentToken && currentToken.length > 10) return currentToken;
+
+    try {
+      const storedToken = await AsyncStorage.getItem("token");
+      currentToken = cleanToken(storedToken);
+      if (currentToken && currentToken.length > 10) return currentToken;
+    } catch (e) {
+      // Silently fail
+    }
+
+    return null;
   }, [token]);
 
-  // ==================== FONCTIONS API ====================
+  // ==================== FONCTION FETCH ====================
   const fetchCommerces = useCallback(
     async (tab = activeTab, pageNum = 1, isRefresh = false) => {
+      if (!isMounted.current) return;
+
+      const currentToken = await getValidToken();
+
+      if (!currentToken) {
+        if (isMounted.current) {
+          setLoading(false);
+          Alert.alert(
+            "Erreur d'authentification",
+            "Token non disponible. Veuillez vous reconnecter.",
+            [{ text: "OK", onPress: () => router.replace("/(auth)/login") }]
+          );
+        }
+        return;
+      }
+
+      if (!isAdmin) {
+        if (isMounted.current) setLoading(false);
+        return;
+      }
+
       try {
         if (!isRefresh) setLoading(true);
 
-        let response;
-
-        // helper to normalize different response shapes
-        const extractList = (data) => {
-          if (!data) return [];
-          if (Array.isArray(data)) return data;
-          if (Array.isArray(data.commerces)) return data.commerces;
-          if (Array.isArray(data.list)) return data.list;
-          if (Array.isArray(data.items)) return data.items;
-          // fallback: try to find the first array in the object
-          const arr = Object.values(data).find((v) => Array.isArray(v));
-          return Array.isArray(arr) ? arr : [];
+        const headers = {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${currentToken}`,
         };
 
-        if (tab === "pending") {
-          // Try admin endpoint first, fallback to public pending endpoint
-          console.log("📡 Appel API: /admin/commerces/pending (try)");
-          try {
-            response = await api.get("/admin/commerces/pending");
-          } catch (err) {
-            console.log(
-              "/admin/commerces/pending failed, trying /commerces/pending",
-              err?.response?.status
-            );
-            response = await api.get("/commerces/pending");
-          }
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 15000);
 
-          console.log("Réponse pending:", response.data);
+        let url = `${API_BASE_URL}/admin/commerces/pending`;
+        if (tab === "all") {
+          url = `${API_BASE_URL}/admin/commerces?page=${pageNum}&limit=20`;
+        } else if (tab === "approved") {
+          url = `${API_BASE_URL}/admin/commerces?status=approved&page=${pageNum}&limit=20`;
+        } else if (tab === "rejected") {
+          url = `${API_BASE_URL}/admin/commerces?status=rejected&page=${pageNum}&limit=20`;
+        }
 
-          const list = extractList(response.data);
-          setCommerces(list);
+        const response = await fetch(url, {
+          method: "GET",
+          headers,
+          signal: controller.signal,
+        });
 
-          // adminCities may be provided by admin route
-          setAdminCities(response.data.adminCities || []);
+        clearTimeout(timeoutId);
 
-          // try to set stat if present
-          if (typeof response.data.count === "number") {
-            setStats((prev) => ({ ...prev, pending: response.data.count }));
-          } else if (
-            response.data.stats &&
-            typeof response.data.stats.pending === "number"
-          ) {
-            setStats((prev) => ({
-              ...prev,
-              pending: response.data.stats.pending,
-            }));
+        if (response.ok) {
+          const data = await response.json();
+          const list = Array.isArray(data) ? data : data?.commerces || [];
+
+          if (isMounted.current) {
+            setCommerces(list);
+            setAdminCities(data.adminCities || []);
+            setTotalPages(data.pages || data.totalPages || 1);
+
+            if (data.stats) {
+              setStats(data.stats);
+            } else if (typeof data.count === "number") {
+              setStats((prev) => ({ ...prev, [tab]: data.count }));
+            }
           }
         } else {
-          const params = {
-            page: pageNum,
-            limit: 20,
-            ...(tab !== "all" && { status: tab }),
-          };
-          console.log("📡 Appel API: /admin/commerces", params);
-          response = await api.get("/admin/commerces", { params });
-
-          const list = extractList(response.data);
-
-          if (pageNum === 1) {
-            setCommerces(list);
-          } else {
-            setCommerces((prev) => [...prev, ...list]);
-          }
-
-          setStats(
-            response.data.stats || {
-              pending: 0,
-              approved: 0,
-              rejected: 0,
-              suspended: 0,
+          if (response.status === 401) {
+            if (isMounted.current) {
+              Alert.alert(
+                "Session expirée",
+                "Votre session a expiré. Veuillez vous reconnecter.",
+                [
+                  {
+                    text: "OK",
+                    onPress: () => {
+                      logout?.();
+                      router.replace("/(auth)/login");
+                    },
+                  },
+                ]
+              );
             }
-          );
-          setTotalPages(response.data.pages || 1);
-          setAdminCities(response.data.adminCities || []);
+          } else if (response.status === 403) {
+            if (isMounted.current) {
+              Alert.alert(
+                "Accès refusé",
+                "Vous n'avez pas les permissions nécessaires."
+              );
+            }
+          } else {
+            if (isMounted.current) {
+              Alert.alert("Erreur", `Erreur serveur: ${response.status}`);
+            }
+          }
         }
       } catch (error) {
-        console.log("=== Erreur fetchCommerces ===");
-        console.log("Status:", error.response?.status);
-        console.log("Data:", JSON.stringify(error.response?.data, null, 2));
-
-        if (error.response?.status === 401) {
-          Alert.alert(
-            "Session expirée",
-            "Votre session a expiré. Veuillez vous reconnecter.",
-            [{ text: "OK", onPress: () => router.replace("/(auth)/login") }]
-          );
-        } else if (error.response?.status === 403) {
-          // Try to refresh user profile - maybe the role changed server-side
-          const updated = await (refreshUser
-            ? refreshUser()
-            : Promise.resolve(null));
-
-          if (updated && updated.role !== "admin") {
+        if (error.name === "AbortError") {
+          if (isMounted.current) {
             Alert.alert(
-              "Accès refusé",
-              "Votre rôle a changé et vous n'êtes plus administrateur.",
-              [{ text: "OK", onPress: () => router.replace("/(tabs)") }]
-            );
-          } else {
-            Alert.alert(
-              "Accès refusé",
-              "Vous n'avez pas les permissions nécessaires.",
-              [{ text: "OK", onPress: () => router.replace("/(tabs)") }]
+              "Timeout",
+              "La requête a pris trop de temps. Réessayez."
             );
           }
         } else {
-          Alert.alert(
-            "Erreur",
-            error.response?.data?.message ||
-              "Impossible de charger les commerces"
-          );
+          if (isMounted.current) {
+            Alert.alert("Erreur réseau", error.message);
+          }
         }
       } finally {
-        setLoading(false);
-        setRefreshing(false);
+        if (isMounted.current) {
+          setLoading(false);
+          setRefreshing(false);
+        }
       }
     },
-    [activeTab, token, router]
+    [activeTab, isAdmin, getValidToken, router, logout]
   );
+
+  useEffect(() => {
+    if (!authLoading && isTokenReady && token && isAdmin) {
+      fetchCommerces(activeTab, 1);
+    } else if (!authLoading && !isAdmin) {
+      setLoading(false);
+    }
+  }, [authLoading, isTokenReady, token, isAdmin]);
+
+  useEffect(() => {
+    if (!authLoading && isTokenReady && token && isAdmin) {
+      setPage(1);
+      fetchCommerces(activeTab, 1, true);
+    }
+  }, [activeTab]);
+
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    setPage(1);
+    fetchCommerces(activeTab, 1, true);
+  }, [activeTab, fetchCommerces]);
+
+  const loadMore = () => {
+    if (page < totalPages && !loading && activeTab !== "pending") {
+      setPage((prev) => prev + 1);
+      fetchCommerces(activeTab, page + 1);
+    }
+  };
 
   const approveCommerce = async (commerce) => {
     Alert.alert(
@@ -228,12 +323,37 @@ function PendingCommerce() {
           onPress: async () => {
             try {
               setActionLoading(commerce._id);
-              await api.put(`/admin/commerce/${commerce._id}/approve`);
-              Alert.alert("Succès", "Commerce approuvé !");
-              setDetailModalVisible(false);
-              fetchCommerces(activeTab, 1, true);
+              const currentToken = await getValidToken();
+
+              if (!currentToken) {
+                Alert.alert("Erreur", "Token non disponible");
+                return;
+              }
+
+              const response = await fetch(
+                `${API_BASE_URL}/admin/commerce/${commerce._id}/approve`,
+                {
+                  method: "PUT",
+                  headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${currentToken}`,
+                  },
+                }
+              );
+
+              if (response.ok) {
+                Alert.alert("Succès", "Commerce approuvé !");
+                setDetailModalVisible(false);
+                fetchCommerces(activeTab, 1, true);
+              } else {
+                const errorData = await response.json().catch(() => ({}));
+                Alert.alert(
+                  "Erreur",
+                  errorData.message || "Erreur lors de l'approbation"
+                );
+              }
             } catch (error) {
-              Alert.alert("Erreur", error.response?.data?.message || "Erreur");
+              Alert.alert("Erreur", error.message);
             } finally {
               setActionLoading(null);
             }
@@ -249,44 +369,91 @@ function PendingCommerce() {
       return;
     }
 
+    Keyboard.dismiss();
+
     try {
       setActionLoading(selectedCommerce._id);
-      await api.put(`/admin/commerce/${selectedCommerce._id}/reject`, {
-        reason: rejectReason.trim(),
-      });
-      Alert.alert("Succès", "Commerce rejeté");
-      setRejectModalVisible(false);
-      setDetailModalVisible(false);
-      setRejectReason("");
-      fetchCommerces(activeTab, 1, true);
+      const currentToken = await getValidToken();
+
+      if (!currentToken) {
+        Alert.alert("Erreur", "Token non disponible");
+        return;
+      }
+
+      const response = await fetch(
+        `${API_BASE_URL}/admin/commerce/${selectedCommerce._id}/reject`,
+        {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${currentToken}`,
+          },
+          body: JSON.stringify({ reason: rejectReason.trim() }),
+        }
+      );
+
+      if (response.ok) {
+        Alert.alert("Succès", "Commerce rejeté");
+        setRejectModalVisible(false);
+        setDetailModalVisible(false);
+        setRejectReason("");
+        fetchCommerces(activeTab, 1, true);
+      } else {
+        const errorData = await response.json().catch(() => ({}));
+        Alert.alert("Erreur", errorData.message || "Erreur lors du rejet");
+      }
     } catch (error) {
-      Alert.alert("Erreur", error.response?.data?.message || "Erreur");
+      Alert.alert("Erreur", error.message);
     } finally {
       setActionLoading(null);
     }
   };
 
-  // ==================== EFFECTS ====================
-  useEffect(() => {
-    if (token) {
-      setPage(1);
-      fetchCommerces(activeTab, 1);
-    }
-  }, [activeTab, token]);
+  const dismissKeyboard = () => Keyboard.dismiss();
 
-  const onRefresh = () => {
-    setRefreshing(true);
-    setPage(1);
-    fetchCommerces(activeTab, 1, true);
+  const closeRejectModal = () => {
+    Keyboard.dismiss();
+    setRejectModalVisible(false);
+    setRejectReason("");
   };
 
-  const loadMore = () => {
-    if (page < totalPages && !loading && activeTab !== "pending") {
-      const nextPage = page + 1;
-      setPage(nextPage);
-      fetchCommerces(activeTab, nextPage);
-    }
-  };
+  // ==================== ÉCRANS DE CHARGEMENT / ERREUR ====================
+
+  if (authLoading || !isTokenReady) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <StatusBar barStyle="dark-content" backgroundColor="#F5F5F5" />
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#007AFF" />
+          <Text style={styles.loadingText}>
+            {authLoading ? "Vérification des accès..." : "Chargement..."}
+          </Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (!user || !isAdmin) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <StatusBar barStyle="dark-content" backgroundColor="#F5F5F5" />
+        <View style={styles.loadingContainer}>
+          <Ionicons name="lock-closed" size={64} color="#CCC" />
+          <Text style={styles.emptyText}>Accès refusé</Text>
+          <Text style={styles.emptySubtext}>
+            Cette page est réservée aux administrateurs
+          </Text>
+          <TouchableOpacity
+            style={styles.retryButton}
+            onPress={() => router.replace("/(tabs)")}
+          >
+            <Ionicons name="home" size={20} color="#007AFF" />
+            <Text style={styles.retryButtonText}>Retour à l'accueil</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   // ==================== COMPOSANTS UI ====================
   const renderHeader = () => (
@@ -298,21 +465,17 @@ function PendingCommerce() {
         >
           <Ionicons name="arrow-back" size={24} color="#333" />
         </TouchableOpacity>
-
         <Text style={styles.headerTitle}>Gestion des Commerces</Text>
-
         <View style={styles.adminBadge}>
           <Text style={styles.adminBadgeText}>Admin</Text>
         </View>
       </View>
 
-      {/* Info utilisateur */}
       <View style={styles.authInfoContainer}>
         <View style={styles.userInfoBadge}>
           <Ionicons name="person-circle-outline" size={16} color="#007AFF" />
           <Text style={styles.userInfoText}>
-            {user?.username || user?.account?.username || "Admin"} ({user?.role}
-            )
+            {getUserDisplayName(user)} ({getUserRoleDisplay(user)})
           </Text>
         </View>
       </View>
@@ -351,7 +514,9 @@ function PendingCommerce() {
         <TouchableOpacity
           key={tab.key}
           style={[styles.tab, activeTab === tab.key && styles.activeTab]}
-          onPress={() => setActiveTab(tab.key)}
+          onPress={() => {
+            if (activeTab !== tab.key) setActiveTab(tab.key);
+          }}
         >
           <Text
             style={[
@@ -384,8 +549,8 @@ function PendingCommerce() {
         activeOpacity={0.7}
       >
         <View style={styles.cardHeader}>
-          {item.logo ? (
-            <Image source={{ uri: item.logo }} style={styles.logo} />
+          {item.logo?.url ? (
+            <Image source={{ uri: item.logo.url }} style={styles.logo} />
           ) : (
             <View style={[styles.logo, styles.logoPlaceholder]}>
               <Ionicons name="storefront" size={24} color="#999" />
@@ -506,9 +671,9 @@ function PendingCommerce() {
               showsVerticalScrollIndicator={false}
             >
               <View style={styles.modalCommerceHeader}>
-                {selectedCommerce.logo ? (
+                {selectedCommerce.logo?.url ? (
                   <Image
-                    source={{ uri: selectedCommerce.logo }}
+                    source={{ uri: selectedCommerce.logo.url }}
                     style={styles.modalLogo}
                   />
                 ) : (
@@ -635,87 +800,107 @@ function PendingCommerce() {
     </Modal>
   );
 
-  const renderRejectModal = () => (
-    <Modal
-      visible={rejectModalVisible}
-      animationType="fade"
-      transparent={true}
-      onRequestClose={() => {
-        setRejectModalVisible(false);
-        setRejectReason("");
-      }}
-    >
-      <View style={styles.modalOverlay}>
-        <View style={[styles.modalContent, styles.rejectModalContent]}>
-          <View style={styles.modalHeader}>
-            <TouchableOpacity
-              onPress={() => {
-                setRejectModalVisible(false);
-                setRejectReason("");
-              }}
-            >
-              <Ionicons name="arrow-back" size={24} color="#333" />
-            </TouchableOpacity>
-            <Text style={styles.modalTitle}>Rejeter le commerce</Text>
-            <TouchableOpacity
-              onPress={() => {
-                setRejectModalVisible(false);
-                setRejectReason("");
-              }}
-            >
-              <Ionicons name="close" size={24} color="#333" />
-            </TouchableOpacity>
-          </View>
+  const renderRejectModal = () => {
+    const modalBottomPosition =
+      Platform.OS === "android" && isKeyboardVisible ? keyboardHeight : 0;
 
-          <View style={styles.rejectModalBody}>
-            <Text style={styles.rejectLabel}>
-              Raison du refus pour "{selectedCommerce?.name}" :
-            </Text>
-            <TextInput
-              style={styles.rejectInput}
-              placeholder="Indiquez la raison du refus..."
-              placeholderTextColor="#999"
-              multiline
-              numberOfLines={4}
-              value={rejectReason}
-              onChangeText={setRejectReason}
-              textAlignVertical="top"
-            />
-
-            <View style={styles.rejectModalActions}>
-              <TouchableOpacity
-                style={[styles.modalButton, styles.cancelButton]}
-                onPress={() => {
-                  setRejectModalVisible(false);
-                  setRejectReason("");
-                }}
-              >
-                <Text style={styles.cancelButtonText}>Annuler</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
+    return (
+      <Modal
+        visible={rejectModalVisible}
+        animationType="fade"
+        transparent={true}
+        statusBarTranslucent={Platform.OS === "android"}
+        onRequestClose={closeRejectModal}
+      >
+        <TouchableWithoutFeedback onPress={dismissKeyboard}>
+          <View style={styles.rejectModalOverlay}>
+            <TouchableWithoutFeedback>
+              <View
                 style={[
-                  styles.modalButton,
-                  styles.confirmRejectButton,
-                  !rejectReason.trim() && styles.disabledButton,
+                  styles.rejectModalContainer,
+                  {
+                    marginBottom: modalBottomPosition,
+                    maxHeight: isKeyboardVisible
+                      ? SCREEN_HEIGHT - keyboardHeight - 100
+                      : SCREEN_HEIGHT * 0.7,
+                  },
                 ]}
-                onPress={rejectCommerce}
-                disabled={actionLoading || !rejectReason.trim()}
               >
-                {actionLoading ? (
-                  <ActivityIndicator size="small" color="#FFF" />
-                ) : (
-                  <Text style={styles.modalButtonText}>Confirmer</Text>
-                )}
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </View>
-    </Modal>
-  );
+                <View style={styles.rejectModalHeader}>
+                  <TouchableOpacity
+                    onPress={closeRejectModal}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  >
+                    <Ionicons name="arrow-back" size={24} color="#333" />
+                  </TouchableOpacity>
+                  <Text style={styles.rejectModalTitle}>
+                    Rejeter le commerce
+                  </Text>
+                  <TouchableOpacity
+                    onPress={closeRejectModal}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  >
+                    <Ionicons name="close" size={24} color="#333" />
+                  </TouchableOpacity>
+                </View>
 
-  // ==================== RENDER PRINCIPAL ====================
+                <ScrollView
+                  style={styles.rejectModalBody}
+                  keyboardShouldPersistTaps="handled"
+                  showsVerticalScrollIndicator={false}
+                >
+                  <Text style={styles.rejectLabel}>
+                    Raison du refus pour "{selectedCommerce?.name}" :
+                  </Text>
+
+                  <TextInput
+                    style={styles.rejectInput}
+                    placeholder="Indiquez la raison du refus..."
+                    placeholderTextColor="#999"
+                    multiline
+                    numberOfLines={4}
+                    value={rejectReason}
+                    onChangeText={setRejectReason}
+                    textAlignVertical="top"
+                    autoFocus={false}
+                  />
+
+                  <View style={styles.rejectModalActions}>
+                    <TouchableOpacity
+                      style={[styles.modalButton, styles.cancelButton]}
+                      onPress={closeRejectModal}
+                    >
+                      <Text style={styles.cancelButtonText}>Annuler</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[
+                        styles.modalButton,
+                        styles.confirmRejectButton,
+                        !rejectReason.trim() && styles.disabledButton,
+                      ]}
+                      onPress={rejectCommerce}
+                      disabled={actionLoading || !rejectReason.trim()}
+                    >
+                      {actionLoading ? (
+                        <ActivityIndicator size="small" color="#FFF" />
+                      ) : (
+                        <Text style={styles.modalButtonText}>Confirmer</Text>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+
+                  <View style={{ height: 20 }} />
+                </ScrollView>
+              </View>
+            </TouchableWithoutFeedback>
+          </View>
+        </TouchableWithoutFeedback>
+      </Modal>
+    );
+  };
+
+  // ==================== RENDU PRINCIPAL ====================
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#F5F5F5" />
@@ -763,9 +948,6 @@ function PendingCommerce() {
     </SafeAreaView>
   );
 }
-
-// ✅ Export avec le HOC
-export default withAdminOnly(PendingCommerce);
 
 // ==================== STYLES ====================
 const styles = StyleSheet.create({
@@ -1168,8 +1350,31 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "600",
   },
-  rejectModalContent: {
-    maxHeight: "60%",
+  rejectModalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    justifyContent: "flex-end",
+  },
+  rejectModalContainer: {
+    backgroundColor: "#FFF",
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    minHeight: 280,
+  },
+  rejectModalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: "#EEE",
+  },
+  rejectModalTitle: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: "#333",
+    flex: 1,
+    textAlign: "center",
   },
   rejectModalBody: {
     padding: 20,
@@ -1178,6 +1383,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#333",
     marginBottom: 12,
+    fontWeight: "500",
   },
   rejectInput: {
     backgroundColor: "#F5F5F5",
@@ -1186,8 +1392,10 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#333",
     minHeight: 100,
+    maxHeight: 150,
     borderWidth: 1,
     borderColor: "#E0E0E0",
+    textAlignVertical: "top",
   },
   rejectModalActions: {
     flexDirection: "row",

@@ -43,12 +43,21 @@ export default function Events() {
   const [menuVisible, setMenuVisible] = useState(false);
   const [slideAnim] = useState(new Animated.Value(-DRAWER_WIDTH));
 
+  // ✅ Vérification des rôles
+  const userRoles = user?.roles || [];
   const isAdmin =
-    ctxIsAdmin || user?.roles?.includes?.("admin") || user?.role === "admin";
+    ctxIsAdmin ||
+    userRoles.includes("admin") ||
+    userRoles.includes("superAdmin") ||
+    user?.role === "admin";
   const isSuperAdmin =
     ctxIsSuperAdmin ||
-    user?.roles?.includes?.("superAdmin") ||
+    userRoles.includes("superAdmin") ||
     user?.role === "superAdmin";
+
+  // ✅ NOUVEAU : Vérification du rôle commerce
+  const isCommerce =
+    userRoles.includes("commerce") || user?.role === "commerce";
 
   // ✅ Ouvrir le menu
   const openMenu = () => {
@@ -268,11 +277,16 @@ export default function Events() {
 
         {/* Placeholder pour équilibrer le header */}
         <View style={styles.headerRight}>
-          {isAdmin ? (
+          {isAdmin && (
             <View style={styles.adminBadge}>
               <Text style={styles.adminBadgeText}>Admin</Text>
             </View>
-          ) : null}
+          )}
+          {isCommerce && !isAdmin && (
+            <View style={[styles.adminBadge, { backgroundColor: "#10b981" }]}>
+              <Text style={styles.adminBadgeText}>Commerce</Text>
+            </View>
+          )}
         </View>
       </View>
 
@@ -467,7 +481,6 @@ export default function Events() {
       </ScrollView>
 
       {/* ✅ MENU BURGER (Drawer) */}
-
       <Modal
         visible={menuVisible}
         transparent
@@ -484,7 +497,6 @@ export default function Events() {
           {/* Header du menu */}
           <View style={styles.drawerHeader}>
             <View style={styles.drawerProfile}>
-              {/* ✅ CORRECTION : user.avatar au lieu de user.account.avatar */}
               {user?.avatar?.secure_url ? (
                 <Image
                   source={{ uri: user.avatar.secure_url }}
@@ -493,17 +505,14 @@ export default function Events() {
               ) : (
                 <View style={styles.drawerAvatarPlaceholder}>
                   <Text style={styles.drawerAvatarText}>
-                    {/* ✅ CORRECTION : user.username au lieu de user.account.username */}
                     {user?.username?.charAt(0).toUpperCase() || "?"}
                   </Text>
                 </View>
               )}
               <View style={styles.drawerUserInfo}>
-                {/* ✅ CORRECTION : user.username */}
                 <Text style={styles.drawerUsername}>
                   {user?.username || "Utilisateur"}
                 </Text>
-                {/* ✅ CORRECTION : user.city (pas d'email dans la réponse API) */}
                 <Text style={styles.drawerEmail}>{user?.city || ""}</Text>
               </View>
             </View>
@@ -543,8 +552,31 @@ export default function Events() {
             {/* Séparateur */}
             <View style={styles.drawerSeparator} />
 
+            {/* ✅ NOUVEAU : Section Commerce (si rôle commerce) */}
+            {isCommerce && (
+              <>
+                <Text style={styles.drawerSectionTitle}>Mon Commerce</Text>
+
+                <TouchableOpacity
+                  style={styles.drawerItem}
+                  onPress={() => {
+                    closeMenu();
+                    router.push("/commerce/dashboard");
+                  }}
+                >
+                  <Ionicons name="stats-chart" size={24} color="#10b981" />
+                  <Text style={[styles.drawerItemText, { color: "#10b981" }]}>
+                    Dashboard
+                  </Text>
+                  <Ionicons name="chevron-forward" size={20} color="#10b981" />
+                </TouchableOpacity>
+
+                <View style={styles.drawerSeparator} />
+              </>
+            )}
+
             {/* Section Admin (si admin) */}
-            {isAdmin ? (
+            {isAdmin && (
               <>
                 <Text style={styles.drawerSectionTitle}>Administration</Text>
 
@@ -575,6 +607,7 @@ export default function Events() {
                   </Text>
                   <Ionicons name="chevron-forward" size={20} color="#007bff" />
                 </TouchableOpacity>
+
                 <TouchableOpacity
                   style={styles.drawerItem}
                   onPress={() => {
@@ -595,7 +628,7 @@ export default function Events() {
 
                 <View style={styles.drawerSeparator} />
               </>
-            ) : null}
+            )}
 
             {/* À propos */}
             <TouchableOpacity
@@ -676,7 +709,7 @@ const styles = StyleSheet.create({
     color: "#333",
   },
   headerRight: {
-    width: 50,
+    width: 70,
     alignItems: "flex-end",
   },
   adminBadge: {

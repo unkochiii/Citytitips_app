@@ -1,5 +1,13 @@
-import { createContext, useContext, useState, useEffect } from "react";
+// app/context/AuthContext.js
+import {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useCallback,
+} from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { Platform } from "react-native";
 
 const AuthContext = createContext();
 
@@ -7,8 +15,9 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [token, setToken] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isTokenReady, setIsTokenReady] = useState(false); // ✅ Nouveau flag
 
-  // Normalise le nom de ville (ex: 'tanger' -> 'Tanger')
+  // Normalise le nom de ville
   const normalizeCity = (c) => {
     if (!c) return c;
     return c
@@ -24,41 +33,63 @@ export const AuthProvider = ({ children }) => {
 
   useEffect(() => {
     const loadUser = async () => {
+      console.log(`[${Platform.OS}] ========== LOADING USER ==========`);
       try {
         const storedToken = await AsyncStorage.getItem("token");
         const storedUser = await AsyncStorage.getItem("user");
 
+        console.log(
+          `[${Platform.OS}] Token from storage:`,
+          storedToken ? "EXISTS" : "NULL"
+        );
+        console.log(
+          `[${Platform.OS}] User from storage:`,
+          storedUser ? "EXISTS" : "NULL"
+        );
+
         if (storedToken && storedUser) {
-          setToken(storedToken);
-          // Normaliser la ville si présente
           const parsed = JSON.parse(storedUser);
           if (parsed?.city) parsed.city = normalizeCity(parsed.city);
+
+          // ✅ IMPORTANT: Set token FIRST, then user
+          setToken(storedToken);
           setUser(parsed);
+
           console.log(
-            "AuthProvider: user loaded from storage:",
-            JSON.stringify(parsed, null, 2)
+            `[${Platform.OS}] Token set:`,
+            storedToken.substring(0, 30) + "..."
           );
+          console.log(`[${Platform.OS}] User set:`, parsed?.username);
+
+          // ✅ Sur Android, attendre un peu plus pour s'assurer que le state est mis à jour
+          if (Platform.OS === "android") {
+            await new Promise((resolve) => setTimeout(resolve, 100));
+          }
+
+          setIsTokenReady(true);
+        } else {
+          console.log(`[${Platform.OS}] No stored credentials`);
+          setIsTokenReady(true);
         }
       } catch (error) {
-        console.log("Erreur chargement user:", error);
+        console.error(`[${Platform.OS}] Erreur chargement user:`, error);
+        setIsTokenReady(true);
       } finally {
         setIsLoading(false);
+        console.log(`[${Platform.OS}] ========== LOADING COMPLETE ==========`);
       }
     };
 
     loadUser();
   }, []);
 
-  // ✅ CORRECTION : Adapter à la vraie structure de l'API avec "roles" (array)
   const login = async (userData) => {
     try {
-      console.log("=== DONNÉES REÇUES DE L'API ===");
-      console.log(JSON.stringify(userData, null, 2));
+      console.log(`[${Platform.OS}] ========== LOGIN ==========`);
+      console.log("Données reçues:", JSON.stringify(userData, null, 2));
 
       const newToken = userData.token;
 
-      // ✅ CORRECTION : Sauvegarder "roles" (array) au lieu de "role" (string)
-      // Robust roles extraction from multiple possible API shapes
       const possibleRoles = userData.user.roles ||
         userData.user.account?.roles ||
         (userData.user.role ? [userData.user.role] : null) ||
@@ -85,7 +116,7 @@ export const AuthProvider = ({ children }) => {
         role: userData.user.role || newRoles[0] || "user",
         city: normalizeCity(normalizedCity),
         adminCities:
-          userData.user.adminCities || userData.user.account?.adminCities || [], // ✅ Ajouter adminCities
+          userData.user.adminCities || userData.user.account?.adminCities || [],
         isAdmin: userData.user.isAdmin || newRoles.includes("admin") || false,
         isSuperAdmin:
           userData.user.isSuperAdmin ||
@@ -93,40 +124,73 @@ export const AuthProvider = ({ children }) => {
           false,
       };
 
-      console.log("=== USER À SAUVEGARDER ===");
-      console.log(JSON.stringify(newUser, null, 2));
+      console.log(
+        `[${Platform.OS}] User à sauvegarder:`,
+        JSON.stringify(newUser, null, 2)
+      );
 
+      // ✅ Sauvegarder dans AsyncStorage
       await AsyncStorage.setItem("token", newToken);
       await AsyncStorage.setItem("user", JSON.stringify(newUser));
+
+      // ✅ Mettre à jour le state
       setToken(newToken);
       setUser(newUser);
+      setIsTokenReady(true);
+
+      console.log(`[${Platform.OS}] Login complete, token saved`);
     } catch (error) {
-      console.log("Erreur sauvegarde:", error);
+      console.error(`[${Platform.OS}] Erreur login:`, error);
     }
   };
 
   const logout = async () => {
     try {
+      console.log(`[${Platform.OS}] ========== LOGOUT ==========`);
       await AsyncStorage.removeItem("token");
       await AsyncStorage.removeItem("user");
       setToken(null);
       setUser(null);
+      setIsTokenReady(false);
     } catch (error) {
-      console.log("Erreur logout:", error);
+      console.error(`[${Platform.OS}] Erreur logout:`, error);
     }
   };
 
-  // Refresh current user data from API (useful if role changed server-side)
-  const refreshUser = async () => {
-    if (!token || !user?._id) return null;
+  // ✅ Fonction pour récupérer le token directement depuis AsyncStorage (fallback)
+  const getToken = useCallback(async () => {
+    if (token) return token;
 
     try {
+      const storedToken = await AsyncStorage.getItem("token");
+      console.log(
+        `[${Platform.OS}] getToken fallback:`,
+        storedToken ? "EXISTS" : "NULL"
+      );
+      return storedToken;
+    } catch (error) {
+      console.error(`[${Platform.OS}] Erreur getToken:`, error);
+      return null;
+    }
+  }, [token]);
+
+  const refreshUser = async () => {
+    // ✅ Utiliser getToken pour être sûr d'avoir le token
+    const currentToken = await getToken();
+
+    if (!currentToken || !user?._id) {
+      console.log(`[${Platform.OS}] refreshUser: pas de token ou user`);
+      return null;
+    }
+
+    try {
+      console.log(`[${Platform.OS}] ========== REFRESH USER ==========`);
       const response = await fetch(
         `https://api--tanjablabla--t4nqvl4d28d8.code.run/user/${user._id}`,
         {
           method: "GET",
           headers: {
-            Authorization: `Bearer ${token}`,
+            Authorization: `Bearer ${currentToken}`,
             "Content-Type": "application/json",
           },
         }
@@ -136,7 +200,6 @@ export const AuthProvider = ({ children }) => {
       const apiUser = data.user || data.data || data;
 
       if (apiUser && apiUser._id) {
-        // ✅ CORRECTION : Normaliser les données refresh aussi
         const updatedRoles =
           apiUser.roles || (apiUser.role ? [apiUser.role] : ["user"]);
 
@@ -160,10 +223,11 @@ export const AuthProvider = ({ children }) => {
 
         await AsyncStorage.setItem("user", JSON.stringify(updatedUser));
         setUser(updatedUser);
+        console.log(`[${Platform.OS}] User refreshed:`, updatedUser.username);
         return updatedUser;
       }
     } catch (error) {
-      console.log("Erreur refreshUser:", error);
+      console.error(`[${Platform.OS}] Erreur refreshUser:`, error);
     }
 
     return null;
@@ -186,11 +250,13 @@ export const AuthProvider = ({ children }) => {
         user,
         token,
         isLoading,
+        isTokenReady, // ✅ Nouveau
         isAdmin,
         isSuperAdmin,
         login,
         logout,
         refreshUser,
+        getToken, // ✅ Nouveau - fonction pour récupérer le token
       }}
     >
       {children}

@@ -55,9 +55,7 @@ const extractCommerces = (responseData) => {
     Object.keys(responseData || {})
   );
 
-  // ✅ Structure de votre backend: { success, message, commerces, total, pages, ... }
   if (Array.isArray(responseData?.commerces)) {
-    // Vérifier que c'est bien des commerces (pas des users)
     const firstItem = responseData.commerces[0];
     if (
       firstItem &&
@@ -76,7 +74,6 @@ const extractCommerces = (responseData) => {
     }
   }
 
-  // ❌ Ne pas utiliser d'autres fallbacks qui pourraient prendre des users
   console.error("❌ Impossible de trouver les commerces dans la réponse");
   console.error(
     "Données reçues:",
@@ -93,7 +90,6 @@ const extractCommerces = (responseData) => {
 const CommerceCard = React.memo(({ commerce, onPress, getCategoryLabel }) => {
   const hasActiveOffer = commerce.offers?.some((o) => o.isActive);
 
-  // ✅ DEBUG: Afficher la structure complète du commerce
   console.log("🏪 CommerceCard received:", {
     _id: commerce._id,
     id: commerce.id,
@@ -103,10 +99,8 @@ const CommerceCard = React.memo(({ commerce, onPress, getCategoryLabel }) => {
     fullObject: JSON.stringify(commerce, null, 2).substring(0, 500),
   });
 
-  // Resolve the commerce id safely
   const commerceId = commerce._id || commerce.id || null;
 
-  // ⚠️ VÉRIFICATION: S'assurer qu'on n'utilise pas l'ownerId par erreur
   if (commerceId === commerce.ownerId || commerceId === commerce.ownerId?._id) {
     console.error("❌ ERREUR: commerceId === ownerId !", {
       commerceId,
@@ -227,17 +221,26 @@ export default function Commerce() {
   const [menuVisible, setMenuVisible] = useState(false);
   const slideAnim = useRef(new Animated.Value(-DRAWER_WIDTH)).current;
 
+  // ✅ Vérification des rôles
+  const userRoles = useMemo(() => user?.roles || [], [user?.roles]);
+
   const isAdmin = useMemo(() => {
     if (ctxIsAdmin) return true;
-    if (user?.roles?.includes?.("admin")) return true;
+    if (userRoles.includes("admin")) return true;
+    if (userRoles.includes("superAdmin")) return true;
     return user?.role === "admin";
-  }, [ctxIsAdmin, user?.roles, user?.role]);
+  }, [ctxIsAdmin, userRoles, user?.role]);
 
   const isSuperAdmin = useMemo(() => {
     if (ctxIsSuperAdmin) return true;
-    if (user?.roles?.includes?.("superAdmin")) return true;
+    if (userRoles.includes("superAdmin")) return true;
     return user?.role === "superAdmin";
-  }, [ctxIsSuperAdmin, user?.roles, user?.role]);
+  }, [ctxIsSuperAdmin, userRoles, user?.role]);
+
+  // ✅ NOUVEAU : Vérification du rôle commerce
+  const isCommerce = useMemo(() => {
+    return userRoles.includes("commerce") || user?.role === "commerce";
+  }, [userRoles, user?.role]);
 
   const userCity = useMemo(
     () => user?.location?.city || user?.city || "",
@@ -304,7 +307,7 @@ export default function Commerce() {
     ]);
   }, [closeMenu, logout, router]);
 
-  // ✅ API Calls - CORRIGÉ pour gérer toutes les structures
+  // ✅ API Calls
   const fetchCommerces = useCallback(
     async ({
       page = 1,
@@ -322,12 +325,6 @@ export default function Commerce() {
           setIsLoading(page === 1 && !refreshing);
           setError(null);
         }
-
-        // Construction des headers
-        // (Debug extraction moved to run after the response is fetched to avoid using `response` before it's defined.)
-        // 🔴🔴🔴 FIN DEBUG 🔴🔴🔴
-
-        // ... reste du code ...
 
         const headers = { "Content-Type": "application/json" };
 
@@ -374,7 +371,6 @@ export default function Commerce() {
 
         console.log("✅ Response status:", response.status);
 
-        // ✅ CORRECTION: Vérifier que response.data existe
         if (!response.data) {
           console.error("❌ Response data is undefined");
           setCommerces([]);
@@ -382,7 +378,6 @@ export default function Commerce() {
           return;
         }
 
-        // RAW keys for quick inspection
         console.log(
           "🔴 RAW response.data keys:",
           Object.keys(response.data || {})
@@ -395,12 +390,10 @@ export default function Commerce() {
           JSON.stringify(response.data, null, 2).substring(0, 1000)
         );
 
-        // ✅ CORRECTION: Extraction sécurisée
         const { commerces: fetched, metadata } = extractCommerces(
           response.data
         );
 
-        // ✅ CORRECTION: Vérifier que fetched est un tableau
         if (!Array.isArray(fetched)) {
           console.error("❌ Fetched is not an array:", fetched);
           setCommerces([]);
@@ -410,7 +403,6 @@ export default function Commerce() {
 
         console.log(`✅ Extracted ${fetched.length} commerce(s)`);
 
-        // DEBUG: dump each commerce summary for debugging owner vs commerce IDs
         console.log("=".repeat(60));
         console.log("🔴 COMMERCES EXTRAITS:", fetched.length);
         if (fetched.length > 0) {
@@ -443,7 +435,6 @@ export default function Commerce() {
           });
         }
 
-        // Filtrer les commerces approuvés
         const approvedCommerces = fetched.filter(
           (c) =>
             c.status === "approved" ||
@@ -480,7 +471,6 @@ export default function Commerce() {
         });
         handleError(error);
 
-        // ✅ CORRECTION: Ne pas laisser commerces undefined
         if (!append) {
           setCommerces([]);
         }
@@ -496,7 +486,7 @@ export default function Commerce() {
   // Fetch initial
   useEffect(() => {
     fetchCommerces({ page: 1, search: searchQuery, allCities: allCitiesView });
-  }, [token, allCitiesView]); // Removed fetchCommerces to avoid infinite loop
+  }, [token, allCitiesView]);
 
   // Debounced search
   useEffect(() => {
@@ -584,6 +574,11 @@ export default function Commerce() {
           {isAdmin && (
             <View style={styles.adminBadge}>
               <Text style={styles.adminBadgeText}>Admin</Text>
+            </View>
+          )}
+          {isCommerce && !isAdmin && (
+            <View style={[styles.adminBadge, { backgroundColor: "#10b981" }]}>
+              <Text style={styles.adminBadgeText}>Commerce</Text>
             </View>
           )}
         </View>
@@ -759,6 +754,7 @@ export default function Commerce() {
           </View>
 
           <ScrollView style={styles.drawerContent}>
+            {/* Profil */}
             <TouchableOpacity
               style={styles.drawerItem}
               onPress={() => {
@@ -771,6 +767,7 @@ export default function Commerce() {
               <Ionicons name="chevron-forward" size={20} color="#999" />
             </TouchableOpacity>
 
+            {/* Paramètres */}
             <TouchableOpacity
               style={styles.drawerItem}
               onPress={() => {
@@ -785,19 +782,30 @@ export default function Commerce() {
 
             <View style={styles.drawerSeparator} />
 
-            <TouchableOpacity
-              style={styles.drawerItem}
-              onPress={handleAddCommerce}
-            >
-              <Ionicons name="storefront-outline" size={24} color="#28a745" />
-              <Text style={[styles.drawerItemText, { color: "#28a745" }]}>
-                Ajouter mon commerce
-              </Text>
-              <Ionicons name="chevron-forward" size={20} color="#28a745" />
-            </TouchableOpacity>
+            {/* ✅ NOUVEAU : Section Commerce (si rôle commerce) */}
+            {isCommerce && (
+              <>
+                <Text style={styles.drawerSectionTitle}>Mon Commerce</Text>
 
-            <View style={styles.drawerSeparator} />
+                <TouchableOpacity
+                  style={styles.drawerItem}
+                  onPress={() => {
+                    closeMenu();
+                    router.push("/commerce/dashboard");
+                  }}
+                >
+                  <Ionicons name="stats-chart" size={24} color="#10b981" />
+                  <Text style={[styles.drawerItemText, { color: "#10b981" }]}>
+                    Dashboard
+                  </Text>
+                  <Ionicons name="chevron-forward" size={20} color="#10b981" />
+                </TouchableOpacity>
 
+                <View style={styles.drawerSeparator} />
+              </>
+            )}
+
+            {/* Section Admin (si admin) */}
             {isAdmin && (
               <>
                 <Text style={styles.drawerSectionTitle}>Administration</Text>
@@ -852,6 +860,7 @@ export default function Commerce() {
               </>
             )}
 
+            {/* À propos */}
             <TouchableOpacity
               style={styles.drawerItem}
               onPress={() => {
@@ -868,6 +877,7 @@ export default function Commerce() {
               <Ionicons name="chevron-forward" size={20} color="#999" />
             </TouchableOpacity>
 
+            {/* Aide */}
             <TouchableOpacity
               style={styles.drawerItem}
               onPress={() => {
@@ -921,7 +931,7 @@ const styles = StyleSheet.create({
     color: "#333",
   },
   headerRight: {
-    width: 50,
+    width: 70,
     alignItems: "flex-end",
   },
   adminBadge: {
@@ -935,7 +945,6 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: "bold",
   },
-  // ✅ Debug Box
   debugBox: {
     backgroundColor: "#fff3cd",
     padding: 12,
@@ -952,7 +961,6 @@ const styles = StyleSheet.create({
     color: "#856404",
     marginBottom: 2,
   },
-  // ✅ City Info
   cityInfo: {
     flexDirection: "row",
     alignItems: "center",
@@ -988,7 +996,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "500",
   },
-  // ✅ Refresh Button
   refreshBtn: {
     flexDirection: "row",
     alignItems: "center",
@@ -1003,7 +1010,6 @@ const styles = StyleSheet.create({
     color: "#007bff",
     fontWeight: "600",
   },
-  // ✅ Retry Button
   retryBtn: {
     backgroundColor: "#e74c3c",
     paddingHorizontal: 12,

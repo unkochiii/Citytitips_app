@@ -10,44 +10,111 @@ import {
   RefreshControl,
   ActivityIndicator,
   Alert,
+  Dimensions,
+  Modal,
+  Pressable,
 } from "react-native";
 import { useRouter } from "expo-router";
 import axios from "axios";
 import { useAuth } from "../context/AuthContext";
 import { FontAwesome, Ionicons } from "@expo/vector-icons";
+import back from "../assets/images/background.jpg";
+
+const { width } = Dimensions.get("window");
+const API_BASE_URL = "https://api--tanjablabla--t4nqvl4d28d8.code.run";
 
 export default function Profile() {
   const router = useRouter();
-  const { token, user: authUser } = useAuth();
+  const { token, user: authUser, logout } = useAuth();
 
   const [user, setUser] = useState(null);
   const [posts, setPosts] = useState([]);
+  const [postsStats, setPostsStats] = useState({
+    pending: 0,
+    approved: 0,
+    rejected: 0,
+  });
+  const [commerce, setCommerce] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [activeTab, setActiveTab] = useState("commerces");
+  const [postFilter, setPostFilter] = useState("all");
+  const [menuVisible, setMenuVisible] = useState(false);
+
+  // ✅ Fonction pour obtenir l'URL de l'avatar
+  const getAvatarUrl = (avatar) => {
+    if (!avatar) return null;
+    if (typeof avatar === "string") return avatar;
+    if (avatar.secure_url) return avatar.secure_url;
+    if (avatar.url) return avatar.url;
+    return null;
+  };
+
+  // ✅ Fonction pour obtenir l'URL d'une image
+  const getImageUrl = (image) => {
+    if (!image) return null;
+    if (typeof image === "string") return image;
+    if (image.secure_url) return image.secure_url;
+    if (image.url) return image.url;
+    return null;
+  };
+
+  // ✅ Fonction pour formater l'adresse
+  const formatAddress = (address) => {
+    if (!address) return null;
+    if (typeof address === "string") return address;
+    if (typeof address === "object") {
+      const parts = [address.street, address.city, address.postalCode].filter(
+        Boolean
+      );
+      return parts.length > 0 ? parts.join(", ") : null;
+    }
+    return null;
+  };
 
   const fetchProfileData = useCallback(async () => {
     if (!token) return;
 
     try {
       setIsLoading(true);
-      const userResponse = await axios.get(
-        "https://api--tanjablabla--t4nqvl4d28d8.code.run/profile",
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        }
-      );
 
-      const postsResponse = await axios.get(
-        "https://api--tanjablabla--t4nqvl4d28d8.code.run/profile/posts",
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        }
-      );
+      const userResponse = await axios.get(`${API_BASE_URL}/user/profile`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
 
-      setUser(userResponse.data);
-      setPosts(postsResponse.data.posts || []);
+      const postsResponse = await axios.get(`${API_BASE_URL}/my-posts`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      const userData = userResponse.data?.data || userResponse.data;
+      const postsData = postsResponse.data?.data || postsResponse.data;
+
+      let commerceData = null;
+      try {
+        const commerceResponse = await axios.get(
+          `${API_BASE_URL}/my-commerce`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          }
+        );
+        const commerceResponseData =
+          commerceResponse.data?.data || commerceResponse.data;
+        if (commerceResponseData?.hasCommerce) {
+          commerceData = commerceResponseData;
+        }
+      } catch (commerceError) {
+        console.log("Pas de commerce trouvé");
+      }
+
+      setUser(userData);
+      setPosts(postsData?.posts || []);
+      setPostsStats(
+        postsData?.stats || { pending: 0, approved: 0, rejected: 0 }
+      );
+      setCommerce(commerceData);
     } catch (error) {
-      console.log(error);
+      console.log("Erreur lors du chargement du profil:", error);
+      Alert.alert("Erreur", "Impossible de charger votre profil");
     } finally {
       setIsLoading(false);
     }
@@ -63,7 +130,6 @@ export default function Profile() {
     setRefreshing(false);
   }, [fetchProfileData]);
 
-  // ✅ Fonction pour afficher les étoiles de notation
   const renderStars = (note) => {
     const maxStars = 5;
     const rating = Math.min(Math.max(0, note || 0), maxStars);
@@ -74,34 +140,32 @@ export default function Profile() {
         <FontAwesome
           key={i}
           name={i <= rating ? "star" : "star-o"}
-          size={16}
+          size={14}
           color={i <= rating ? "#FFD700" : "#ccc"}
           style={{ marginRight: 2 }}
         />
       );
     }
-
     return <View style={styles.starsContainer}>{stars}</View>;
   };
 
-  // ✅ Fonction pour gérer les likes
   const handleLike = async (postId) => {
     try {
       const response = await axios.post(
-        `https://api--tanjablabla--t4nqvl4d28d8.code.run/post/${postId}/toggle-like`,
+        `${API_BASE_URL}/post/${postId}/toggle-like`,
         {},
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        }
+        { headers: { Authorization: `Bearer ${token}` } }
       );
+
+      const responseData = response.data?.data || response.data;
 
       setPosts((prevPosts) =>
         prevPosts.map((post) =>
           post._id === postId
             ? {
                 ...post,
-                likesCount: response.data.likesCount,
-                hasLiked: response.data.hasLiked,
+                likesCount: responseData.likesCount,
+                hasLiked: responseData.hasLiked,
               }
             : post
         )
@@ -111,7 +175,6 @@ export default function Profile() {
     }
   };
 
-  // ✅ Fonction pour supprimer un post
   const handleDeletePost = (postId) => {
     Alert.alert(
       "Supprimer la publication",
@@ -123,25 +186,27 @@ export default function Profile() {
           style: "destructive",
           onPress: async () => {
             try {
-              await axios.delete(
-                `https://api--tanjablabla--t4nqvl4d28d8.code.run/post/${postId}`,
-                {
-                  headers: { Authorization: `Bearer ${token}` },
-                }
-              );
-
+              await axios.delete(`${API_BASE_URL}/post/${postId}`, {
+                headers: { Authorization: `Bearer ${token}` },
+              });
               setPosts((prevPosts) =>
                 prevPosts.filter((post) => post._id !== postId)
               );
 
+              const deletedPost = posts.find((p) => p._id === postId);
+              if (deletedPost) {
+                setPostsStats((prev) => ({
+                  ...prev,
+                  [deletedPost.status]: Math.max(
+                    0,
+                    (prev[deletedPost.status] || 0) - 1
+                  ),
+                }));
+              }
+
               Alert.alert("Succès", "Publication supprimée avec succès");
             } catch (error) {
-              console.log("Erreur lors de la suppression:", error);
-              Alert.alert(
-                "Erreur",
-                error.response?.data?.message ||
-                  "Erreur lors de la suppression de la publication"
-              );
+              Alert.alert("Erreur", "Erreur lors de la suppression");
             }
           },
         },
@@ -149,7 +214,24 @@ export default function Profile() {
     );
   };
 
-  // ✅ Fonction pour obtenir la couleur du type
+  // ✅ Fonction pour gérer la déconnexion
+  const handleLogout = () => {
+    Alert.alert("Déconnexion", "Êtes-vous sûr de vouloir vous déconnecter ?", [
+      { text: "Annuler", style: "cancel" },
+      {
+        text: "Déconnexion",
+        style: "destructive",
+        onPress: async () => {
+          setMenuVisible(false);
+          if (logout) {
+            await logout();
+          }
+          router.replace("/login");
+        },
+      },
+    ]);
+  };
+
   const getTypeColor = (type) => {
     switch (type) {
       case "event":
@@ -165,338 +247,776 @@ export default function Profile() {
     }
   };
 
-  // ✅ Fonction pour obtenir la couleur du statut
   const getStatusStyle = (status) => {
     switch (status) {
       case "pending":
-        return { backgroundColor: "#fff3cd", color: "#856404" };
+        return { bg: "#fff3cd", color: "#856404", label: "En attente" };
       case "rejected":
-        return { backgroundColor: "#f8d7da", color: "#721c24" };
+        return { bg: "#f8d7da", color: "#721c24", label: "Refusé" };
       case "approved":
-        return { backgroundColor: "#d4edda", color: "#155724" };
+        return { bg: "#d4edda", color: "#155724", label: "Approuvé" };
       default:
-        return { backgroundColor: "#e2e3e5", color: "#383d41" };
+        return { bg: "#e2e3e5", color: "#383d41", label: "Inconnu" };
     }
   };
+
+  const filteredPosts = posts.filter((post) => {
+    if (postFilter === "all") return true;
+    return post.status === postFilter;
+  });
+
+  const totalPosts = posts.length;
+  const avatarUrl = getAvatarUrl(user?.account?.avatar);
 
   if (isLoading && !refreshing) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#007bff" />
-        <Text>Chargement...</Text>
+        <ActivityIndicator size="large" color="#4A90A4" />
+        <Text style={styles.loadingText}>Chargement...</Text>
       </View>
     );
   }
 
+  const commerceAddress = commerce?.commerce?.address
+    ? formatAddress(commerce.commerce.address)
+    : null;
+
   return (
     <View style={styles.container}>
-      {/* ✅ Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}>
-          <Ionicons name="arrow-back" size={24} color="#333" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Mon profil</Text>
-        <View style={{ width: 24 }} />
-      </View>
+      {/* ✅ Menu Modal */}
+      <Modal
+        visible={menuVisible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setMenuVisible(false)}
+      >
+        <Pressable
+          style={styles.modalOverlay}
+          onPress={() => setMenuVisible(false)}
+        >
+          <View style={styles.menuContainer}>
+            <TouchableOpacity
+              style={styles.menuItem}
+              onPress={() => {
+                setMenuVisible(false);
+                router.push("/editProfile");
+              }}
+            >
+              <Ionicons name="person-outline" size={20} color="#333" />
+              <Text style={styles.menuItemText}>Modifier le profil</Text>
+            </TouchableOpacity>
+
+            <View style={styles.menuDivider} />
+
+            <TouchableOpacity
+              style={styles.menuItem}
+              onPress={() => {
+                setMenuVisible(false);
+                router.push("/settings");
+              }}
+            >
+              <Ionicons name="settings-outline" size={20} color="#333" />
+              <Text style={styles.menuItemText}>Paramètres</Text>
+            </TouchableOpacity>
+
+            <View style={styles.menuDivider} />
+
+            <TouchableOpacity
+              style={[styles.menuItem, styles.menuItemDanger]}
+              onPress={handleLogout}
+            >
+              <Ionicons name="log-out-outline" size={20} color="#e74c3c" />
+              <Text style={[styles.menuItemText, styles.menuItemTextDanger]}>
+                Déconnexion
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </Pressable>
+      </Modal>
 
       <ScrollView
         style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
+        showsVerticalScrollIndicator={false}
       >
-        {/* ========== SECTION PROFIL ========== */}
-        <View style={styles.profileCard}>
-          {/* Bouton modifier le profil */}
+        {/* ========== COVER IMAGE ========== */}
+        <View style={styles.coverContainer}>
+          <Image source={back} alt="background" style={styles.coverImage} />
+
           <TouchableOpacity
-            style={styles.editProfileBtn}
-            onPress={() => router.push("/editProfile")}
+            style={styles.backButton}
+            onPress={() => router.back()}
           >
-            <Text style={styles.editProfileBtnText}>Modifier le profil</Text>
+            <Ionicons name="chevron-back" size={24} color="#333" />
           </TouchableOpacity>
 
-          {/* Avatar */}
-          <View style={styles.profileHeader}>
-            {user?.account?.avatar?.secure_url ? (
+          {/* ✅ Menu button */}
+          <TouchableOpacity
+            style={styles.menuButton}
+            onPress={() => setMenuVisible(true)}
+          >
+            <Ionicons name="ellipsis-vertical" size={20} color="#333" />
+          </TouchableOpacity>
+        </View>
+
+        {/* ========== PROFILE INFO ========== */}
+        <View style={styles.profileSection}>
+          <View style={styles.avatarContainer}>
+            {avatarUrl ? (
               <Image
-                source={{ uri: user.account.avatar.secure_url }}
-                style={styles.profileAvatar}
+                source={{ uri: avatarUrl }}
+                style={styles.avatar}
+                onError={(e) =>
+                  console.log("Erreur chargement avatar:", e.nativeEvent.error)
+                }
               />
             ) : (
-              <View style={styles.profileAvatarPlaceholder}>
-                <Text style={styles.profileAvatarText}>
+              <View style={styles.avatarPlaceholder}>
+                <Text style={styles.avatarText}>
                   {user?.account?.username?.charAt(0).toUpperCase() ||
                     authUser?.username?.charAt(0).toUpperCase() ||
                     "?"}
                 </Text>
               </View>
             )}
+          </View>
 
-            <Text style={styles.profileUsername}>
-              {user?.account?.username || authUser?.username || "Utilisateur"}
-            </Text>
+          <Text style={styles.username}>
+            {user?.account?.username || authUser?.username || "Utilisateur"}
+          </Text>
 
-            {/* Stats */}
-            <View style={styles.statsContainer}>
-              <View style={styles.statItem}>
-                <Text style={styles.statNumber}>{posts.length}</Text>
-                <Text style={styles.statLabel}>publications</Text>
-              </View>
+          {user?.roles?.includes("admin") && (
+            <View style={styles.roleBadge}>
+              <Ionicons name="shield-checkmark" size={14} color="#fff" />
+              <Text style={styles.roleBadgeText}>Admin</Text>
+            </View>
+          )}
+
+          <Text style={styles.bio}>
+            {user?.location?.city
+              ? `📍 ${user.location.city}`
+              : "Membre de Tanja Blabla"}
+          </Text>
+
+          <View style={styles.statsContainer}>
+            <View style={styles.statItem}>
+              <Text style={styles.statNumber}>{totalPosts}</Text>
+              <Text style={styles.statLabel}>Posts</Text>
+            </View>
+            <View style={styles.statDivider} />
+            <View style={styles.statItem}>
+              <Text style={[styles.statNumber, { color: "#27ae60" }]}>
+                {postsStats.approved}
+              </Text>
+              <Text style={styles.statLabel}>Approuvés</Text>
+            </View>
+            <View style={styles.statDivider} />
+            <View style={styles.statItem}>
+              <Text style={[styles.statNumber, { color: "#f39c12" }]}>
+                {postsStats.pending}
+              </Text>
+              <Text style={styles.statLabel}>En attente</Text>
+            </View>
+            <View style={styles.statDivider} />
+            <View style={styles.statItem}>
+              <Text style={[styles.statNumber, { color: "#e74c3c" }]}>
+                {postsStats.rejected}
+              </Text>
+              <Text style={styles.statLabel}>Refusés</Text>
             </View>
           </View>
         </View>
 
-        {/* Séparateur */}
-        <View style={styles.separator} />
-
-        {/* ========== SECTION PUBLICATIONS ========== */}
-        <Text style={styles.sectionTitle}>Mes Publications</Text>
-
-        {posts.length === 0 ? (
-          <View style={styles.noPosts}>
-            <Ionicons name="document-text-outline" size={50} color="#999" />
-            <Text style={styles.noPostsText}>
-              Vous n'avez pas encore de publications.
-            </Text>
-            <TouchableOpacity
-              style={styles.createPostBtn}
-              onPress={() => router.push("/(tabs)/create")}
+        {/* ========== TABS ========== */}
+        <View style={styles.tabsContainer}>
+          <TouchableOpacity
+            style={[styles.tab, activeTab === "commerces" && styles.activeTab]}
+            onPress={() => setActiveTab("commerces")}
+          >
+            <Ionicons
+              name="storefront-outline"
+              size={20}
+              color={activeTab === "commerces" ? "#4A90A4" : "#999"}
+            />
+            <Text
+              style={[
+                styles.tabText,
+                activeTab === "commerces" && styles.activeTabText,
+              ]}
             >
-              <Text style={styles.createPostBtnText}>
-                Créer ma première publication
-              </Text>
-            </TouchableOpacity>
-          </View>
-        ) : (
-          posts.map((post) => (
-            <View key={post._id} style={styles.article}>
-              {/* Sous-header avec type et statut */}
-              <View style={styles.sousHeader}>
-                <View style={styles.sousHeaderLeft}>
-                  <View
-                    style={[
-                      styles.light,
-                      { backgroundColor: getTypeColor(post.type) },
-                    ]}
-                  />
-                  <Text style={styles.postType}>{post.type}</Text>
-                </View>
+              Commerces
+            </Text>
+          </TouchableOpacity>
 
-                {/* Badge de statut */}
-                {post.status && post.status !== "approved" && (
-                  <View
-                    style={[
-                      styles.statusBadge,
-                      {
-                        backgroundColor: getStatusStyle(post.status)
-                          .backgroundColor,
-                      },
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.statusBadgeText,
-                        { color: getStatusStyle(post.status).color },
-                      ]}
-                    >
-                      {post.status === "pending" && "En attente"}
-                      {post.status === "rejected" && "Rejeté"}
-                    </Text>
-                  </View>
-                )}
-              </View>
+          <TouchableOpacity
+            style={[
+              styles.tab,
+              activeTab === "publications" && styles.activeTab,
+            ]}
+            onPress={() => setActiveTab("publications")}
+          >
+            <Ionicons
+              name="grid-outline"
+              size={20}
+              color={activeTab === "publications" ? "#4A90A4" : "#999"}
+            />
+            <Text
+              style={[
+                styles.tabText,
+                activeTab === "publications" && styles.activeTabText,
+              ]}
+            >
+              Publications ({posts.length})
+            </Text>
+          </TouchableOpacity>
+        </View>
 
-              {/* Contenu cliquable */}
-              <TouchableOpacity
-                onPress={() => router.push(`/post/${post._id}`)}
-                activeOpacity={0.8}
-              >
-                {/* Avatar et infos auteur */}
-                <View style={styles.avatarRow}>
-                  {user?.account?.avatar?.secure_url ? (
+        {/* ========== TAB CONTENT ========== */}
+        <View style={styles.tabContent}>
+          {activeTab === "commerces" ? (
+            <View style={styles.commercesContainer}>
+              {commerce?.hasCommerce ? (
+                <View style={styles.commerceCard}>
+                  {getImageUrl(commerce.commerce?.images?.[0]) ? (
                     <Image
-                      source={{ uri: user.account.avatar.secure_url }}
-                      style={styles.avatarImg}
+                      source={{ uri: getImageUrl(commerce.commerce.images[0]) }}
+                      style={styles.commerceImage}
                     />
                   ) : (
-                    <View style={styles.avatarPlaceholder}>
-                      <Text style={styles.avatarPlaceholderText}>
-                        {user?.account?.username?.charAt(0).toUpperCase() ||
-                          "?"}
-                      </Text>
+                    <View style={styles.commerceImagePlaceholder}>
+                      <Ionicons name="storefront" size={40} color="#999" />
                     </View>
                   )}
-                  <View>
-                    <Text style={styles.username}>
-                      {user?.account?.username}
-                    </Text>
-                    <Text style={styles.dateText}>
-                      Publié le{" "}
-                      {new Date(post.createdAt).toLocaleDateString("fr-FR")}
-                    </Text>
-                  </View>
-                </View>
 
-                {/* Titre */}
-                <Text style={styles.titre}>{post.titre}</Text>
+                  <View style={styles.commerceInfo}>
+                    <View style={styles.commerceHeader}>
+                      <Text style={styles.commerceName}>
+                        {commerce.commerce?.name || "Mon commerce"}
+                      </Text>
 
-                {/* Description */}
-                {post.description ? (
-                  <Text style={styles.description}>{post.description}</Text>
-                ) : null}
+                      <View
+                        style={[
+                          styles.statusBadge,
+                          {
+                            backgroundColor: getStatusStyle(
+                              commerce.commerce?.status
+                            ).bg,
+                          },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.statusBadgeText,
+                            {
+                              color: getStatusStyle(commerce.commerce?.status)
+                                .color,
+                            },
+                          ]}
+                        >
+                          {getStatusStyle(commerce.commerce?.status).label}
+                        </Text>
+                      </View>
+                    </View>
 
-                {/* Contenu */}
-                {post.content ? (
-                  <Text style={styles.content} numberOfLines={2}>
-                    {post.content}
-                  </Text>
-                ) : null}
+                    {commerce.commerce?.category && (
+                      <Text style={styles.commerceCategory}>
+                        {commerce.commerce.category}
+                      </Text>
+                    )}
 
-                {/* Infos EVENT */}
-                {post.type === "event" && (
-                  <View style={styles.eventInfo}>
-                    {post.lieu ? (
-                      <View style={styles.infoRow}>
+                    {commerceAddress && (
+                      <View style={styles.commerceAddressRow}>
                         <Ionicons
                           name="location-outline"
-                          size={16}
+                          size={14}
                           color="#666"
                         />
-                        <Text style={styles.infoText}>{post.lieu}</Text>
-                      </View>
-                    ) : null}
-                    {post.dateEvent ? (
-                      <View style={styles.infoRow}>
-                        <Ionicons
-                          name="calendar-outline"
-                          size={16}
-                          color="#666"
-                        />
-                        <Text style={styles.infoText}>
-                          {new Date(post.dateEvent).toLocaleDateString("fr-FR")}
+                        <Text style={styles.commerceAddress} numberOfLines={1}>
+                          {commerceAddress}
                         </Text>
-                      </View>
-                    ) : null}
-                    {post.nbParticipants ? (
-                      <View style={styles.infoRow}>
-                        <Ionicons
-                          name="people-outline"
-                          size={16}
-                          color="#666"
-                        />
-                        <Text style={styles.infoText}>
-                          {post.nbParticipants} participants Max
-                        </Text>
-                      </View>
-                    ) : null}
-                  </View>
-                )}
-
-                {/* Infos RECOMMANDATION avec étoiles */}
-                {post.type === "recommandation" && (
-                  <View style={styles.recoInfo}>
-                    {post.note !== undefined && post.note !== null && (
-                      <View style={styles.noteContainer}>
-                        <Text style={styles.noteLabel}>Note :</Text>
-                        {renderStars(post.note)}
-                        <Text style={styles.noteValue}>({post.note}/5)</Text>
                       </View>
                     )}
-                    {post.lieu ? (
-                      <View style={styles.infoRow}>
+
+                    {commerce.commerce?.status === "approved" &&
+                      commerce.reviewStats && (
+                        <View style={styles.commerceStats}>
+                          <View style={styles.commerceStatItem}>
+                            <FontAwesome
+                              name="star"
+                              size={14}
+                              color="#FFD700"
+                            />
+                            <Text style={styles.commerceStatText}>
+                              {commerce.commerce?.averageRating?.toFixed(1) ||
+                                "N/A"}
+                            </Text>
+                          </View>
+                          <View style={styles.commerceStatItem}>
+                            <FontAwesome
+                              name="comment-o"
+                              size={14}
+                              color="#666"
+                            />
+                            <Text style={styles.commerceStatText}>
+                              {commerce.reviewStats.total} avis
+                            </Text>
+                          </View>
+                          {commerce.isOpenNow !== undefined && (
+                            <View style={styles.commerceStatItem}>
+                              <View
+                                style={[
+                                  styles.openDot,
+                                  {
+                                    backgroundColor: commerce.isOpenNow
+                                      ? "#27ae60"
+                                      : "#e74c3c",
+                                  },
+                                ]}
+                              />
+                              <Text style={styles.commerceStatText}>
+                                {commerce.isOpenNow ? "Ouvert" : "Fermé"}
+                              </Text>
+                            </View>
+                          )}
+                        </View>
+                      )}
+
+                    {commerce.commerce?.status === "pending" && (
+                      <View style={styles.statusMessage}>
                         <Ionicons
-                          name="location-outline"
+                          name="time-outline"
                           size={16}
-                          color="#666"
+                          color="#856404"
                         />
-                        <Text style={styles.infoText}>{post.lieu}</Text>
+                        <Text style={styles.statusMessageText}>
+                          Votre commerce est en cours de validation
+                        </Text>
                       </View>
-                    ) : null}
-                  </View>
-                )}
+                    )}
 
-                {/* Image preview */}
-                {post.images && post.images.length > 0 && (
-                  <Image
-                    source={{ uri: post.images[0].url }}
-                    style={styles.postPreview}
-                    resizeMode="cover"
-                  />
-                )}
-              </TouchableOpacity>
-
-              {/* Section interactions */}
-              <View style={styles.interaction}>
-                {post.status === "rejected" ? (
-                  /* Si le post est rejeté, afficher la raison */
-                  <View style={styles.rejectionContainer}>
-                    <Text style={styles.rejectionTitle}>Raison du rejet :</Text>
-                    <Text style={styles.rejectionText}>
-                      {post.rejectionReason || "Aucune raison spécifiée"}
-                    </Text>
-                  </View>
-                ) : post.status === "pending" ? (
-                  /* Si le post est en attente */
-                  <View style={styles.pendingContainer}>
-                    <Ionicons name="time-outline" size={18} color="#856404" />
-                    <Text style={styles.pendingText}>
-                      En attente de validation
-                    </Text>
-                  </View>
-                ) : (
-                  /* Si approuvé, afficher like/comment */
-                  <View style={styles.actionsRow}>
-                    <TouchableOpacity
-                      style={styles.actionBtn}
-                      onPress={() => handleLike(post._id)}
-                    >
-                      <FontAwesome
-                        name={post.hasLiked ? "heart" : "heart-o"}
-                        size={18}
-                        color={post.hasLiked ? "#e74c3c" : "#666"}
-                      />
-                      <Text style={styles.actionNumber}>
-                        {post.likesCount || 0}
-                      </Text>
-                    </TouchableOpacity>
+                    {commerce.commerce?.status === "rejected" && (
+                      <View
+                        style={[
+                          styles.statusMessage,
+                          { backgroundColor: "#f8d7da" },
+                        ]}
+                      >
+                        <Ionicons
+                          name="close-circle-outline"
+                          size={16}
+                          color="#721c24"
+                        />
+                        <Text
+                          style={[
+                            styles.statusMessageText,
+                            { color: "#721c24" },
+                          ]}
+                        >
+                          {commerce.commerce?.rejectionReason ||
+                            "Commerce refusé"}
+                        </Text>
+                      </View>
+                    )}
 
                     <TouchableOpacity
-                      style={styles.actionBtn}
-                      onPress={() => router.push(`/post/${post._id}`)}
+                      style={styles.manageButton}
+                      onPress={() => router.push("/my-commerce")}
                     >
-                      <FontAwesome name="comment-o" size={18} color="#666" />
-                      <Text style={styles.actionNumber}>
-                        {post.commentsCount || 0}
+                      <Text style={styles.manageButtonText}>
+                        Gérer mon commerce
                       </Text>
+                      <Ionicons name="chevron-forward" size={18} color="#fff" />
                     </TouchableOpacity>
                   </View>
-                )}
-
-                {/* Boutons modifier/supprimer */}
-                <View style={styles.ownerActions}>
+                </View>
+              ) : (
+                <View style={styles.noCommerceContainer}>
+                  <View style={styles.noCommerceIcon}>
+                    <Ionicons
+                      name="storefront-outline"
+                      size={60}
+                      color="#ccc"
+                    />
+                  </View>
+                  <Text style={styles.noCommerceTitle}>Aucun commerce</Text>
+                  <Text style={styles.noCommerceText}>
+                    Vous n'avez pas encore créé de commerce. Créez votre
+                    commerce pour le rendre visible aux utilisateurs.
+                  </Text>
                   <TouchableOpacity
-                    style={styles.editBtn}
-                    onPress={() => router.push(`/post/${post._id}/edit`)}
+                    style={styles.createCommerceButton}
+                    onPress={() => router.push("/create-commerce")}
                   >
-                    {/* /post/${post._id}/edit */}
-                    <Ionicons name="pencil-outline" size={16} color="#fff" />
-                    <Text style={styles.editBtnText}>Modifier</Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={styles.deleteBtn}
-                    onPress={() => handleDeletePost(post._id)}
-                  >
-                    <Ionicons name="trash-outline" size={18} color="#fff" />
+                    <Ionicons
+                      name="add-circle-outline"
+                      size={20}
+                      color="#fff"
+                    />
+                    <Text style={styles.createCommerceButtonText}>
+                      Créer mon commerce
+                    </Text>
                   </TouchableOpacity>
                 </View>
-              </View>
+              )}
             </View>
-          ))
-        )}
+          ) : (
+            // ========== PUBLICATIONS TAB ==========
+            <View style={styles.publicationsContainer}>
+              {/* ✅ Filtres pour les publications */}
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                style={styles.filterScrollView}
+                contentContainerStyle={styles.filterContainer}
+              >
+                <TouchableOpacity
+                  style={[
+                    styles.filterButton,
+                    postFilter === "all" && styles.filterButtonActive,
+                  ]}
+                  onPress={() => setPostFilter("all")}
+                >
+                  <Text
+                    style={[
+                      styles.filterButtonText,
+                      postFilter === "all" && styles.filterButtonTextActive,
+                    ]}
+                  >
+                    Tous ({posts.length})
+                  </Text>
+                </TouchableOpacity>
 
-        {/* Espace en bas */}
+                <TouchableOpacity
+                  style={[
+                    styles.filterButton,
+                    postFilter === "approved" && styles.filterButtonActive,
+                    postFilter === "approved" && {
+                      backgroundColor: "#d4edda",
+                      borderColor: "#27ae60",
+                    },
+                  ]}
+                  onPress={() => setPostFilter("approved")}
+                >
+                  <View
+                    style={[styles.filterDot, { backgroundColor: "#27ae60" }]}
+                  />
+                  <Text
+                    style={[
+                      styles.filterButtonText,
+                      postFilter === "approved" && { color: "#155724" },
+                    ]}
+                  >
+                    Approuvés ({postsStats.approved})
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[
+                    styles.filterButton,
+                    postFilter === "pending" && styles.filterButtonActive,
+                    postFilter === "pending" && {
+                      backgroundColor: "#fff3cd",
+                      borderColor: "#f39c12",
+                    },
+                  ]}
+                  onPress={() => setPostFilter("pending")}
+                >
+                  <View
+                    style={[styles.filterDot, { backgroundColor: "#f39c12" }]}
+                  />
+                  <Text
+                    style={[
+                      styles.filterButtonText,
+                      postFilter === "pending" && { color: "#856404" },
+                    ]}
+                  >
+                    En attente ({postsStats.pending})
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[
+                    styles.filterButton,
+                    postFilter === "rejected" && styles.filterButtonActive,
+                    postFilter === "rejected" && {
+                      backgroundColor: "#f8d7da",
+                      borderColor: "#e74c3c",
+                    },
+                  ]}
+                  onPress={() => setPostFilter("rejected")}
+                >
+                  <View
+                    style={[styles.filterDot, { backgroundColor: "#e74c3c" }]}
+                  />
+                  <Text
+                    style={[
+                      styles.filterButtonText,
+                      postFilter === "rejected" && { color: "#721c24" },
+                    ]}
+                  >
+                    Refusés ({postsStats.rejected})
+                  </Text>
+                </TouchableOpacity>
+              </ScrollView>
+
+              {filteredPosts.length === 0 ? (
+                <View style={styles.noPostsContainer}>
+                  <View style={styles.noPostsIcon}>
+                    <Ionicons
+                      name="document-text-outline"
+                      size={60}
+                      color="#ccc"
+                    />
+                  </View>
+                  <Text style={styles.noPostsTitle}>
+                    {postFilter === "all"
+                      ? "Aucune publication"
+                      : `Aucune publication ${getStatusStyle(
+                          postFilter
+                        ).label.toLowerCase()}`}
+                  </Text>
+                  <Text style={styles.noPostsText}>
+                    {postFilter === "all"
+                      ? "Vous n'avez pas encore créé de publication."
+                      : `Vous n'avez pas de publication avec le statut "${
+                          getStatusStyle(postFilter).label
+                        }".`}
+                  </Text>
+                  {postFilter === "all" && (
+                    <TouchableOpacity
+                      style={styles.createPostButton}
+                      onPress={() => router.push("/(tabs)/create")}
+                    >
+                      <Ionicons
+                        name="add-circle-outline"
+                        size={20}
+                        color="#fff"
+                      />
+                      <Text style={styles.createPostButtonText}>
+                        Créer une publication
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              ) : (
+                <>
+                  {filteredPosts.map((post) => (
+                    <View key={post._id} style={styles.postCard}>
+                      {/* Header du post */}
+                      <View style={styles.postHeader}>
+                        <View style={styles.postTypeContainer}>
+                          <View
+                            style={[
+                              styles.postTypeDot,
+                              { backgroundColor: getTypeColor(post.type) },
+                            ]}
+                          />
+                          <Text style={styles.postTypeText}>{post.type}</Text>
+                        </View>
+
+                        <View
+                          style={[
+                            styles.postStatusBadge,
+                            { backgroundColor: getStatusStyle(post.status).bg },
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.postStatusText,
+                              { color: getStatusStyle(post.status).color },
+                            ]}
+                          >
+                            {getStatusStyle(post.status).label}
+                          </Text>
+                        </View>
+                      </View>
+
+                      {/* Contenu cliquable */}
+                      <TouchableOpacity
+                        onPress={() => router.push(`/post/${post._id}`)}
+                        activeOpacity={0.8}
+                      >
+                        <Text style={styles.postTitle}>{post.titre}</Text>
+
+                        {post.description && (
+                          <Text
+                            style={styles.postDescription}
+                            numberOfLines={2}
+                          >
+                            {post.description}
+                          </Text>
+                        )}
+
+                        {post.content && !post.description && (
+                          <Text
+                            style={styles.postDescription}
+                            numberOfLines={2}
+                          >
+                            {post.content}
+                          </Text>
+                        )}
+
+                        {post.images &&
+                          post.images.length > 0 &&
+                          getImageUrl(post.images[0]) && (
+                            <Image
+                              source={{ uri: getImageUrl(post.images[0]) }}
+                              style={styles.postImage}
+                            />
+                          )}
+
+                        {post.type === "event" && post.dateEvent && (
+                          <View style={styles.postMeta}>
+                            <Ionicons
+                              name="calendar-outline"
+                              size={14}
+                              color="#666"
+                            />
+                            <Text style={styles.postMetaText}>
+                              {new Date(post.dateEvent).toLocaleDateString(
+                                "fr-FR"
+                              )}
+                            </Text>
+                            {post.lieu && (
+                              <>
+                                <Ionicons
+                                  name="location-outline"
+                                  size={14}
+                                  color="#666"
+                                  style={{ marginLeft: 10 }}
+                                />
+                                <Text style={styles.postMetaText}>
+                                  {post.lieu}
+                                </Text>
+                              </>
+                            )}
+                          </View>
+                        )}
+
+                        {post.type === "recommandation" &&
+                          post.note !== undefined && (
+                            <View style={styles.postMeta}>
+                              {renderStars(post.note)}
+                              <Text style={styles.postMetaText}>
+                                ({post.note}/5)
+                              </Text>
+                            </View>
+                          )}
+                      </TouchableOpacity>
+
+                      {post.status === "pending" && (
+                        <View style={styles.pendingMessage}>
+                          <Ionicons
+                            name="time-outline"
+                            size={16}
+                            color="#856404"
+                          />
+                          <Text style={styles.pendingMessageText}>
+                            En attente de validation par un administrateur
+                          </Text>
+                        </View>
+                      )}
+
+                      {post.status === "rejected" && (
+                        <View style={styles.rejectionBox}>
+                          <View style={styles.rejectionHeader}>
+                            <Ionicons
+                              name="close-circle"
+                              size={16}
+                              color="#721c24"
+                            />
+                            <Text style={styles.rejectionLabel}>
+                              Publication refusée
+                            </Text>
+                          </View>
+                          {post.rejectionReason && (
+                            <Text style={styles.rejectionText}>
+                              Raison : {post.rejectionReason}
+                            </Text>
+                          )}
+                        </View>
+                      )}
+
+                      {/* Footer du post */}
+                      <View style={styles.postFooter}>
+                        <Text style={styles.postDate}>
+                          {new Date(post.createdAt).toLocaleDateString("fr-FR")}
+                        </Text>
+
+                        <View style={styles.postActions}>
+                          {post.status === "approved" && (
+                            <>
+                              <TouchableOpacity
+                                style={styles.postActionBtn}
+                                onPress={() => handleLike(post._id)}
+                              >
+                                <FontAwesome
+                                  name={post.hasLiked ? "heart" : "heart-o"}
+                                  size={16}
+                                  color={post.hasLiked ? "#e74c3c" : "#666"}
+                                />
+                                <Text style={styles.postActionText}>
+                                  {post.likesCount || post.likes?.length || 0}
+                                </Text>
+                              </TouchableOpacity>
+
+                              <TouchableOpacity
+                                style={styles.postActionBtn}
+                                onPress={() => router.push(`/post/${post._id}`)}
+                              >
+                                <FontAwesome
+                                  name="comment-o"
+                                  size={16}
+                                  color="#666"
+                                />
+                                <Text style={styles.postActionText}>
+                                  {post.commentsCount || 0}
+                                </Text>
+                              </TouchableOpacity>
+                            </>
+                          )}
+
+                          <TouchableOpacity
+                            style={styles.postEditBtn}
+                            onPress={() =>
+                              router.push(`/post/${post._id}/edit`)
+                            }
+                          >
+                            <Ionicons name="pencil" size={16} color="#4A90A4" />
+                          </TouchableOpacity>
+
+                          <TouchableOpacity
+                            style={styles.postDeleteBtn}
+                            onPress={() => handleDeletePost(post._id)}
+                          >
+                            <Ionicons
+                              name="trash-outline"
+                              size={16}
+                              color="#e74c3c"
+                            />
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    </View>
+                  ))}
+
+                  <TouchableOpacity
+                    style={styles.floatingCreateButton}
+                    onPress={() => router.push("/(tabs)/create")}
+                  >
+                    <Ionicons name="add" size={24} color="#fff" />
+                    <Text style={styles.floatingCreateButtonText}>
+                      Nouvelle publication
+                    </Text>
+                  </TouchableOpacity>
+                </>
+              )}
+            </View>
+          )}
+        </View>
+
         <View style={styles.bottomSpacer} />
       </ScrollView>
     </View>
@@ -508,135 +1028,484 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#fff",
   },
+  scrollView: {
+    flex: 1,
+  },
   loadingContainer: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-  },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 15,
-    paddingTop: 50,
-    paddingBottom: 15,
     backgroundColor: "#fff",
-    borderBottomWidth: 1,
-    borderBottomColor: "#eee",
   },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: "bold",
-    color: "#333",
-  },
-  scrollView: {
-    flex: 1,
-  },
-  scrollContent: {
-    padding: 15,
+  loadingText: {
+    marginTop: 10,
+    color: "#666",
+    fontSize: 16,
   },
 
-  // ========== PROFILE CARD ==========
-  profileCard: {
-    backgroundColor: "#f9f9f9",
-    borderRadius: 15,
-    padding: 20,
+  // ========== MODAL MENU ==========
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    justifyContent: "flex-start",
+    alignItems: "flex-end",
   },
-  editProfileBtn: {
-    alignSelf: "flex-end",
-    marginBottom: 10,
+  menuContainer: {
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    marginTop: 90,
+    marginRight: 15,
+    minWidth: 200,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 8,
+    overflow: "hidden",
   },
-  editProfileBtnText: {
-    color: "#007bff",
-    fontSize: 14,
-    fontWeight: "600",
-  },
-  profileHeader: {
+  menuItem: {
+    flexDirection: "row",
     alignItems: "center",
-    gap: 10,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    gap: 12,
   },
-  profileAvatar: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
+  menuItemText: {
+    fontSize: 15,
+    color: "#333",
+    fontWeight: "500",
   },
-  profileAvatarPlaceholder: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    backgroundColor: "#007bff",
+  menuItemDanger: {
+    backgroundColor: "#fff5f5",
+  },
+  menuItemTextDanger: {
+    color: "#e74c3c",
+  },
+  menuDivider: {
+    height: 1,
+    backgroundColor: "#eee",
+  },
+
+  // ========== COVER ==========
+  coverContainer: {
+    height: 200,
+    position: "relative",
+  },
+  coverImage: {
+    width: "100%",
+    height: "100%",
+  },
+  backButton: {
+    position: "absolute",
+    top: 50,
+    left: 15,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "#fff",
     justifyContent: "center",
     alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
-  profileAvatarText: {
-    color: "#fff",
+  menuButton: {
+    position: "absolute",
+    top: 50,
+    right: 15,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "#fff",
+    justifyContent: "center",
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+
+  // ========== PROFILE SECTION ==========
+  profileSection: {
+    alignItems: "center",
+    paddingHorizontal: 20,
+    paddingBottom: 20,
+    backgroundColor: "#fff",
+  },
+  avatarContainer: {
+    marginTop: -50,
+    marginBottom: 15,
+  },
+  avatar: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    borderWidth: 4,
+    borderColor: "#fff",
+    backgroundColor: "#f0f0f0",
+  },
+  avatarPlaceholder: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: "#4A90A4",
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 4,
+    borderColor: "#fff",
+  },
+  avatarText: {
     fontSize: 40,
     fontWeight: "bold",
+    color: "#fff",
   },
-  profileUsername: {
-    fontSize: 22,
+  username: {
+    fontSize: 24,
     fontWeight: "bold",
     color: "#333",
+    marginBottom: 5,
   },
+  roleBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#4A90A4",
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 12,
+    marginBottom: 8,
+    gap: 5,
+  },
+  roleBadgeText: {
+    color: "#fff",
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  bio: {
+    fontSize: 14,
+    color: "#666",
+    textAlign: "center",
+    marginBottom: 20,
+    paddingHorizontal: 20,
+  },
+
+  // ========== STATS ==========
   statsContainer: {
     flexDirection: "row",
-    marginTop: 10,
+    backgroundColor: "#f8f9fa",
+    borderRadius: 15,
+    paddingVertical: 15,
+    paddingHorizontal: 10,
+    width: "100%",
   },
   statItem: {
+    flex: 1,
     alignItems: "center",
   },
+  statDivider: {
+    width: 1,
+    backgroundColor: "#ddd",
+  },
   statNumber: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: "bold",
     color: "#333",
   },
   statLabel: {
-    fontSize: 12,
+    fontSize: 11,
     color: "#999",
+    marginTop: 2,
   },
 
-  // ========== SEPARATOR ==========
-  separator: {
-    height: 1,
-    backgroundColor: "#ddd",
-    marginVertical: 20,
+  // ========== TABS ==========
+  tabsContainer: {
+    flexDirection: "row",
+    borderBottomWidth: 1,
+    borderBottomColor: "#eee",
+    backgroundColor: "#fff",
+  },
+  tab: {
+    flex: 1,
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    paddingVertical: 15,
+    gap: 8,
+  },
+  activeTab: {
+    borderBottomWidth: 2,
+    borderBottomColor: "#4A90A4",
+  },
+  tabText: {
+    fontSize: 14,
+    color: "#999",
+    fontWeight: "500",
+  },
+  activeTabText: {
+    color: "#4A90A4",
+    fontWeight: "600",
   },
 
-  // ========== SECTION TITLE ==========
-  sectionTitle: {
+  // ========== TAB CONTENT ==========
+  tabContent: {
+    flex: 1,
+    backgroundColor: "#f5f5f5",
+    minHeight: 400,
+  },
+
+  // ========== COMMERCES ==========
+  commercesContainer: {
+    padding: 15,
+  },
+  commerceCard: {
+    backgroundColor: "#fff",
+    borderRadius: 15,
+    overflow: "hidden",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  commerceImage: {
+    width: "100%",
+    height: 150,
+  },
+  commerceImagePlaceholder: {
+    width: "100%",
+    height: 150,
+    backgroundColor: "#f0f0f0",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  commerceInfo: {
+    padding: 15,
+  },
+  commerceHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 5,
+  },
+  commerceName: {
     fontSize: 18,
     fontWeight: "bold",
     color: "#333",
+    flex: 1,
+  },
+  statusBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  statusBadgeText: {
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  commerceCategory: {
+    fontSize: 14,
+    color: "#4A90A4",
+    marginBottom: 8,
+  },
+  commerceAddressRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    marginBottom: 10,
+  },
+  commerceAddress: {
+    fontSize: 13,
+    color: "#666",
+    flex: 1,
+  },
+  commerceStats: {
+    flexDirection: "row",
+    gap: 20,
+    paddingVertical: 10,
+    borderTopWidth: 1,
+    borderTopColor: "#eee",
+    marginTop: 10,
+  },
+  commerceStatItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+  },
+  commerceStatText: {
+    fontSize: 13,
+    color: "#666",
+  },
+  openDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  statusMessage: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "#fff3cd",
+    padding: 10,
+    borderRadius: 8,
+    marginTop: 10,
+  },
+  statusMessageText: {
+    fontSize: 13,
+    color: "#856404",
+    flex: 1,
+  },
+  manageButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#4A90A4",
+    paddingVertical: 12,
+    borderRadius: 10,
+    marginTop: 15,
+    gap: 5,
+  },
+  manageButtonText: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+
+  // ========== NO COMMERCE ==========
+  noCommerceContainer: {
+    alignItems: "center",
+    paddingVertical: 50,
+    paddingHorizontal: 30,
+    backgroundColor: "#fff",
+    borderRadius: 15,
+  },
+  noCommerceIcon: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: "#f0f0f0",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 20,
+  },
+  noCommerceTitle: {
+    fontSize: 18,
+    fontWeight: "bold",
+    color: "#333",
+    marginBottom: 10,
+  },
+  noCommerceText: {
+    fontSize: 14,
+    color: "#666",
+    textAlign: "center",
+    lineHeight: 20,
+    marginBottom: 20,
+  },
+  createCommerceButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#4A90A4",
+    paddingVertical: 12,
+    paddingHorizontal: 25,
+    borderRadius: 25,
+    gap: 8,
+  },
+  createCommerceButtonText: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+
+  // ========== PUBLICATIONS ==========
+  publicationsContainer: {
+    padding: 15,
+  },
+
+  // ✅ FILTRES
+  filterScrollView: {
     marginBottom: 15,
+  },
+  filterContainer: {
+    paddingRight: 15,
+  },
+  filterButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 15,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: "#fff",
+    marginRight: 10,
+    borderWidth: 1,
+    borderColor: "#ddd",
+    gap: 6,
+  },
+  filterButtonActive: {
+    borderColor: "#4A90A4",
+  },
+  filterButtonText: {
+    fontSize: 13,
+    color: "#666",
+    fontWeight: "500",
+  },
+  filterButtonTextActive: {
+    color: "#4A90A4",
+    fontWeight: "600",
+  },
+  filterDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
   },
 
   // ========== NO POSTS ==========
-  noPosts: {
+  noPostsContainer: {
     alignItems: "center",
     paddingVertical: 50,
-    gap: 15,
+    paddingHorizontal: 30,
+    backgroundColor: "#fff",
+    borderRadius: 15,
+  },
+  noPostsIcon: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: "#f0f0f0",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 20,
+  },
+  noPostsTitle: {
+    fontSize: 18,
+    fontWeight: "bold",
+    color: "#333",
+    marginBottom: 10,
   },
   noPostsText: {
-    color: "#999",
-    fontSize: 16,
+    fontSize: 14,
+    color: "#666",
     textAlign: "center",
+    marginBottom: 20,
   },
-  createPostBtn: {
-    backgroundColor: "#007bff",
+  createPostButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#4A90A4",
     paddingVertical: 12,
     paddingHorizontal: 25,
-    borderRadius: 10,
-    marginTop: 10,
+    borderRadius: 25,
+    gap: 8,
   },
-  createPostBtnText: {
+  createPostButtonText: {
     color: "#fff",
-    fontWeight: "bold",
     fontSize: 14,
+    fontWeight: "600",
   },
 
-  // ========== ARTICLE ==========
-  article: {
-    backgroundColor: "#f5f5f5",
+  // ========== POST CARD ==========
+  postCard: {
+    backgroundColor: "#fff",
     borderRadius: 15,
     padding: 15,
     marginBottom: 15,
@@ -646,143 +1515,109 @@ const styles = StyleSheet.create({
     shadowRadius: 3,
     elevation: 2,
   },
-  sousHeader: {
+  postHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     marginBottom: 10,
   },
-  sousHeaderLeft: {
+  postTypeContainer: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
   },
-  light: {
-    width: 15,
-    height: 15,
-    borderRadius: 5,
+  postTypeDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 4,
   },
-  postType: {
-    fontWeight: "bold",
-    fontStyle: "italic",
+  postTypeText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#666",
     textTransform: "capitalize",
   },
-  statusBadge: {
+  postStatusBadge: {
     paddingHorizontal: 10,
-    paddingVertical: 4,
+    paddingVertical: 3,
     borderRadius: 10,
   },
-  statusBadgeText: {
-    fontSize: 12,
+  postStatusText: {
+    fontSize: 11,
     fontWeight: "600",
   },
-
-  // ========== AVATAR ROW ==========
-  avatarRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    marginBottom: 10,
-  },
-  avatarImg: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-  },
-  avatarPlaceholder: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "#007bff",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  avatarPlaceholderText: {
-    color: "#fff",
-    fontWeight: "bold",
+  postTitle: {
     fontSize: 16,
-  },
-  username: {
-    fontWeight: "600",
-    fontSize: 14,
+    fontWeight: "bold",
     color: "#333",
-  },
-  dateText: {
-    color: "#999",
-    fontSize: 12,
-  },
-
-  // ========== POST CONTENT ==========
-  titre: {
-    fontSize: 16,
-    fontWeight: "bold",
     marginBottom: 5,
-    color: "#333",
   },
-  description: {
+  postDescription: {
     fontSize: 14,
     color: "#666",
-    marginBottom: 5,
     lineHeight: 20,
-  },
-  content: {
-    fontSize: 13,
-    color: "#888",
     marginBottom: 10,
-    lineHeight: 18,
   },
-
-  // ========== EVENT & RECO INFO ==========
-  eventInfo: {
-    backgroundColor: "#fff",
-    padding: 10,
-    borderRadius: 10,
-    marginBottom: 10,
-    gap: 8,
-  },
-  recoInfo: {
-    backgroundColor: "#fff",
-    padding: 10,
-    borderRadius: 10,
-    marginBottom: 10,
-    gap: 8,
-  },
-  infoRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  infoText: {
-    fontSize: 13,
-    color: "#666",
-  },
-  noteContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  noteLabel: {
-    fontSize: 13,
-    color: "#666",
-  },
-  starsContainer: {
-    flexDirection: "row",
-  },
-  noteValue: {
-    fontSize: 13,
-    color: "#666",
-  },
-
-  // ========== POST PREVIEW ==========
-  postPreview: {
+  postImage: {
     width: "100%",
     height: 180,
     borderRadius: 10,
     marginBottom: 10,
+    backgroundColor: "#f0f0f0",
+  },
+  postMeta: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 10,
+  },
+  postMetaText: {
+    fontSize: 13,
+    color: "#666",
   },
 
-  // ========== INTERACTION ==========
-  interaction: {
+  // ✅ PENDING MESSAGE
+  pendingMessage: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "#fff3cd",
+    padding: 10,
+    borderRadius: 8,
+    marginBottom: 10,
+  },
+  pendingMessageText: {
+    fontSize: 12,
+    color: "#856404",
+    flex: 1,
+  },
+
+  // ✅ REJECTION BOX
+  rejectionBox: {
+    backgroundColor: "#f8d7da",
+    padding: 10,
+    borderRadius: 8,
+    marginBottom: 10,
+  },
+  rejectionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginBottom: 5,
+  },
+  rejectionLabel: {
+    fontSize: 12,
+    fontWeight: "bold",
+    color: "#721c24",
+  },
+  rejectionText: {
+    fontSize: 12,
+    color: "#721c24",
+    marginLeft: 22,
+  },
+
+  // ========== POST FOOTER ==========
+  postFooter: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
@@ -790,78 +1625,49 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: "#eee",
   },
-  actionsRow: {
-    flexDirection: "row",
-    gap: 20,
+  postDate: {
+    fontSize: 12,
+    color: "#999",
   },
-  actionBtn: {
+  postActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 15,
+  },
+  postActionBtn: {
     flexDirection: "row",
     alignItems: "center",
     gap: 5,
   },
-  actionNumber: {
+  postActionText: {
+    fontSize: 13,
     color: "#666",
-    fontSize: 14,
+  },
+  postEditBtn: {
+    padding: 5,
+  },
+  postDeleteBtn: {
+    padding: 5,
+  },
+  starsContainer: {
+    flexDirection: "row",
   },
 
-  // ========== REJECTION & PENDING ==========
-  rejectionContainer: {
-    flex: 1,
-    backgroundColor: "#f8d7da",
-    padding: 10,
-    borderRadius: 8,
-    marginRight: 10,
-  },
-  rejectionTitle: {
-    fontWeight: "bold",
-    color: "#721c24",
-    fontSize: 12,
-  },
-  rejectionText: {
-    color: "#721c24",
-    fontSize: 12,
-    marginTop: 3,
-  },
-  pendingContainer: {
-    flex: 1,
+  // ✅ FLOATING CREATE BUTTON
+  floatingCreateButton: {
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#4A90A4",
+    paddingVertical: 14,
+    borderRadius: 25,
+    marginTop: 10,
     gap: 8,
-    backgroundColor: "#fff3cd",
-    padding: 10,
-    borderRadius: 8,
-    marginRight: 10,
   },
-  pendingText: {
-    color: "#856404",
-    fontSize: 12,
-    fontWeight: "600",
-  },
-
-  // ========== OWNER ACTIONS ==========
-  ownerActions: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-  },
-  editBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
-    backgroundColor: "#007bff",
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-  },
-  editBtnText: {
+  floatingCreateButtonText: {
     color: "#fff",
-    fontSize: 12,
+    fontSize: 14,
     fontWeight: "600",
-  },
-  deleteBtn: {
-    backgroundColor: "#e74c3c",
-    padding: 8,
-    borderRadius: 8,
   },
 
   // ========== BOTTOM SPACER ==========

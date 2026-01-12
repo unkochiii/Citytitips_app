@@ -17,6 +17,8 @@ import { FontAwesome, Ionicons } from "@expo/vector-icons";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { KeyboardAwareScrollView } from "react-native-keyboard-aware-scroll-view";
 
+const API_URL = "https://api--tanjablabla--t4nqvl4d28d8.code.run";
+
 export default function PostDetail() {
   const { id } = useLocalSearchParams();
   const router = useRouter();
@@ -44,25 +46,44 @@ export default function PostDetail() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [commentError, setCommentError] = useState(null);
 
-  // Récupérer le post
+  // ✅ Fonction utilitaire pour extraire les données de la réponse
+  const extractData = (responseData) => {
+    if (responseData && responseData.data !== undefined) {
+      return responseData.data;
+    }
+    return responseData;
+  };
+
+  // ✅ Récupérer le post
   useEffect(() => {
     const fetchPost = async () => {
       try {
         setIsLoading(true);
-        const response = await axios.get(
-          `https://api--tanjablabla--t4nqvl4d28d8.code.run/post/${id}`,
-          {
-            headers: token ? { Authorization: `Bearer ${token}` } : {},
-          }
-        );
-        setPost(response.data);
+        setError(null);
 
-        if (response.data.comments && Array.isArray(response.data.comments)) {
-          setComments(response.data.comments);
+        const response = await axios.get(`${API_URL}/post/${id}`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+
+        const postData = extractData(response.data);
+
+        if (!postData) {
+          setError("Post non trouvé");
+          return;
+        }
+
+        setPost(postData);
+
+        if (postData.comments && Array.isArray(postData.comments)) {
+          setComments(postData.comments);
         }
       } catch (err) {
-        console.error(err);
-        setError(err.response?.data?.message || "Erreur lors du chargement");
+        console.error("Erreur fetch post:", err);
+        const errorMessage =
+          err.response?.data?.message ||
+          err.response?.data?.error ||
+          "Erreur lors du chargement";
+        setError(errorMessage);
       } finally {
         setIsLoading(false);
       }
@@ -73,34 +94,35 @@ export default function PostDetail() {
     }
   }, [id, token]);
 
-  // Récupérer les commentaires
+  // ✅ Récupérer les commentaires séparément
   useEffect(() => {
     const fetchComments = async () => {
       try {
-        const response = await axios.get(
-          `https://api--tanjablabla--t4nqvl4d28d8.code.run/post/${id}/comments`,
-          {
-            headers: token ? { Authorization: `Bearer ${token}` } : {},
-          }
-        );
+        const response = await axios.get(`${API_URL}/post/${id}/comments`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
 
-        if (Array.isArray(response.data)) {
-          setComments(response.data);
-        } else if (response.data?.comments) {
-          setComments(response.data.comments);
+        const commentsData = extractData(response.data);
+
+        if (Array.isArray(commentsData)) {
+          setComments(commentsData);
+        } else if (
+          commentsData?.comments &&
+          Array.isArray(commentsData.comments)
+        ) {
+          setComments(commentsData.comments);
         } else {
           setComments([]);
         }
       } catch (err) {
         console.error("Erreur chargement commentaires:", err);
-        setComments([]);
       }
     };
 
-    if (id) {
+    if (id && post) {
       fetchComments();
     }
-  }, [id, token]);
+  }, [id, token, post?._id]);
 
   // ✅ Fonction pour afficher les étoiles
   const renderStars = (note) => {
@@ -139,7 +161,7 @@ export default function PostDetail() {
     }
   };
 
-  // Gérer le like
+  // ✅ Gérer le like
   const handleLike = async () => {
     if (!token) {
       router.push("/(auth)/login");
@@ -148,24 +170,27 @@ export default function PostDetail() {
 
     try {
       const response = await axios.post(
-        `https://api--tanjablabla--t4nqvl4d28d8.code.run/post/${id}/toggle-like`,
+        `${API_URL}/post/${id}/toggle-like`,
         {},
         {
           headers: { Authorization: `Bearer ${token}` },
         }
       );
 
+      const likeData = extractData(response.data);
+
       setPost((prev) => ({
         ...prev,
-        likesCount: response.data.likesCount,
-        hasLiked: response.data.hasLiked,
+        likesCount: likeData.likesCount ?? prev.likesCount,
+        hasLiked: likeData.hasLiked ?? !prev.hasLiked,
       }));
     } catch (err) {
       console.error("Erreur like:", err);
+      Alert.alert("Erreur", "Impossible de liker ce post");
     }
   };
 
-  // Poster un commentaire
+  // ✅ Poster un commentaire
   const handleSubmitComment = async () => {
     if (!token) {
       router.push("/(auth)/login");
@@ -182,25 +207,30 @@ export default function PostDetail() {
       setCommentError(null);
 
       const response = await axios.post(
-        `https://api--tanjablabla--t4nqvl4d28d8.code.run/post/${id}/comment`,
+        `${API_URL}/post/${id}/comment`,
         { content: commentText },
         {
           headers: { Authorization: `Bearer ${token}` },
         }
       );
 
-      const newComment = response.data?.comment || response.data;
+      const responseData = extractData(response.data);
+      const newComment = responseData?.comment || responseData;
 
       setComments((prev) => [newComment, ...prev]);
+
       setPost((prev) => ({
         ...prev,
         commentsCount: (prev.commentsCount || 0) + 1,
       }));
+
       setCommentText("");
     } catch (err) {
       console.error("Erreur commentaire:", err);
       setCommentError(
-        err.response?.data?.message || "Erreur lors de l'envoi du commentaire"
+        err.response?.data?.message ||
+          err.response?.data?.error ||
+          "Erreur lors de l'envoi du commentaire"
       );
     } finally {
       setIsSubmitting(false);
@@ -221,8 +251,8 @@ export default function PostDetail() {
         onPress: async () => {
           try {
             const url = isCommentAuthor
-              ? `https://api--tanjablabla--t4nqvl4d28d8.code.run/comment/${commentId}`
-              : `https://api--tanjablabla--t4nqvl4d28d8.code.run/admin/comment/${commentId}`;
+              ? `${API_URL}/comment/${commentId}`
+              : `${API_URL}/admin/comment/${commentId}`;
 
             await axios.delete(url, {
               headers: { Authorization: `Bearer ${token}` },
@@ -242,7 +272,9 @@ export default function PostDetail() {
             console.error("Erreur suppression commentaire:", err);
             Alert.alert(
               "Erreur",
-              err.response?.data?.message || "Erreur lors de la suppression"
+              err.response?.data?.message ||
+                err.response?.data?.error ||
+                "Erreur lors de la suppression"
             );
           }
         },
@@ -262,18 +294,17 @@ export default function PostDetail() {
           style: "destructive",
           onPress: async () => {
             try {
-              await axios.delete(
-                `https://api--tanjablabla--t4nqvl4d28d8.code.run/admin/post/${id}`,
-                {
-                  headers: { Authorization: `Bearer ${token}` },
-                }
-              );
+              await axios.delete(`${API_URL}/admin/post/${id}`, {
+                headers: { Authorization: `Bearer ${token}` },
+              });
               router.back();
             } catch (err) {
               console.error("Erreur suppression post:", err);
               Alert.alert(
                 "Erreur",
-                err.response?.data?.message || "Erreur lors de la suppression"
+                err.response?.data?.message ||
+                  err.response?.data?.error ||
+                  "Erreur lors de la suppression"
               );
             }
           },
@@ -282,13 +313,36 @@ export default function PostDetail() {
     );
   };
 
+  // ✅ Fonction pour obtenir l'URL de l'image
+  const getImageUrl = (image) => {
+    if (typeof image === "string") return image;
+    return image?.secure_url || image?.url || null;
+  };
+
+  // ✅ Fonction pour obtenir l'URL de l'avatar
+  const getAvatarUrl = (author) => {
+    const avatar = author?.account?.avatar;
+    if (!avatar) return null;
+    if (typeof avatar === "string") return avatar;
+    return avatar?.secure_url || avatar?.url || null;
+  };
+
   // ✅ Loading
   if (isLoading) {
     return (
       <SafeAreaView style={styles.container} edges={["top"]}>
+        <View style={styles.fixedHeader}>
+          <TouchableOpacity
+            style={styles.backBtn}
+            onPress={() => router.back()}
+          >
+            <Ionicons name="arrow-back" size={24} color="#007bff" />
+            <Text style={styles.backBtnText}>Retour</Text>
+          </TouchableOpacity>
+        </View>
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color="#007bff" />
-          <Text>Chargement...</Text>
+          <Text style={styles.loadingText}>Chargement...</Text>
         </View>
       </SafeAreaView>
     );
@@ -298,16 +352,18 @@ export default function PostDetail() {
   if (error) {
     return (
       <SafeAreaView style={styles.container} edges={["top"]}>
-        <View style={styles.errorContainer}>
-          <Ionicons name="alert-circle" size={50} color="#e74c3c" />
-          <Text style={styles.errorText}>{error}</Text>
+        <View style={styles.fixedHeader}>
           <TouchableOpacity
             style={styles.backBtn}
             onPress={() => router.back()}
           >
-            <Ionicons name="arrow-back" size={20} color="#007bff" />
+            <Ionicons name="arrow-back" size={24} color="#007bff" />
             <Text style={styles.backBtnText}>Retour</Text>
           </TouchableOpacity>
+        </View>
+        <View style={styles.errorContainer}>
+          <Ionicons name="alert-circle" size={50} color="#e74c3c" />
+          <Text style={styles.errorText}>{error}</Text>
         </View>
       </SafeAreaView>
     );
@@ -317,16 +373,18 @@ export default function PostDetail() {
   if (!post) {
     return (
       <SafeAreaView style={styles.container} edges={["top"]}>
-        <View style={styles.errorContainer}>
-          <Ionicons name="help-circle" size={50} color="#999" />
-          <Text style={styles.errorText}>Post non trouvé</Text>
+        <View style={styles.fixedHeader}>
           <TouchableOpacity
             style={styles.backBtn}
             onPress={() => router.back()}
           >
-            <Ionicons name="arrow-back" size={20} color="#007bff" />
+            <Ionicons name="arrow-back" size={24} color="#007bff" />
             <Text style={styles.backBtnText}>Retour</Text>
           </TouchableOpacity>
+        </View>
+        <View style={styles.errorContainer}>
+          <Ionicons name="help-circle" size={50} color="#999" />
+          <Text style={styles.errorText}>Post non trouvé</Text>
         </View>
       </SafeAreaView>
     );
@@ -337,32 +395,34 @@ export default function PostDetail() {
   const isPending = post.status === "pending";
   const isRejected = post.status === "rejected";
 
+  const authorAvatarUrl = getAvatarUrl(post.authorId);
+  const authorUsername = post.authorId?.account?.username || "Anonyme";
+  const authorInitial = authorUsername.charAt(0).toUpperCase();
+
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
+      {/* ✅ Header FIXE - En dehors du ScrollView */}
+      <View style={styles.fixedHeader}>
+        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+          <Ionicons name="arrow-back" size={24} color="#007bff" />
+          <Text style={styles.backBtnText}>Retour</Text>
+        </TouchableOpacity>
+
+        {isAdmin && (
+          <TouchableOpacity onPress={handleDeletePost}>
+            <FontAwesome name="trash-o" size={24} color="#e74c3c" />
+          </TouchableOpacity>
+        )}
+      </View>
+
+      {/* ✅ Contenu scrollable */}
       <KeyboardAwareScrollView
-        style={{ flex: 1 }}
+        style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         enableOnAndroid={true}
         extraScrollHeight={30}
         keyboardShouldPersistTaps="handled"
       >
-        {/* ✅ Header avec bouton retour */}
-        <View style={styles.header}>
-          <TouchableOpacity
-            style={styles.backBtn}
-            onPress={() => router.back()}
-          >
-            <Ionicons name="arrow-back" size={24} color="#007bff" />
-            <Text style={styles.backBtnText}>Retour</Text>
-          </TouchableOpacity>
-
-          {isAdmin && (
-            <TouchableOpacity onPress={handleDeletePost}>
-              <FontAwesome name="trash-o" size={24} color="#e74c3c" />
-            </TouchableOpacity>
-          )}
-        </View>
-
         {/* ✅ Article */}
         <View style={styles.article}>
           {/* Type et statut */}
@@ -374,7 +434,7 @@ export default function PostDetail() {
                   { backgroundColor: getTypeColor(post.type) },
                 ]}
               />
-              <Text style={styles.postType}>{post.type}</Text>
+              <Text style={styles.postType}>{post.type || "post"}</Text>
             </View>
 
             {!isApproved && (
@@ -386,7 +446,11 @@ export default function PostDetail() {
                 ]}
               >
                 <Text style={styles.statusText}>
-                  {isPending ? "En attente" : "Rejeté"}
+                  {isPending
+                    ? "En attente"
+                    : isRejected
+                    ? "Rejeté"
+                    : post.status}
                 </Text>
               </View>
             )}
@@ -394,31 +458,36 @@ export default function PostDetail() {
 
           {/* Auteur */}
           <View style={styles.avatar}>
-            {post.authorId?.account?.avatar?.secure_url ? (
+            {authorAvatarUrl ? (
               <Image
-                source={{ uri: post.authorId.account.avatar.secure_url }}
+                source={{ uri: authorAvatarUrl }}
                 style={styles.avatarImg}
               />
             ) : (
               <View style={styles.avatarPlaceholder}>
                 <Text style={styles.avatarPlaceholderText}>
-                  {post.authorId?.account?.username?.charAt(0).toUpperCase() ||
-                    "?"}
+                  {authorInitial}
                 </Text>
               </View>
             )}
             <View style={styles.avatarInfo}>
-              <Text style={styles.username}>
-                {post.authorId?.account?.username || "Anonyme"}
-              </Text>
+              <Text style={styles.username}>{authorUsername}</Text>
+              {post.authorId?.location?.city && (
+                <Text style={styles.locationText}>
+                  📍 {post.authorId.location.city}
+                </Text>
+              )}
               <Text style={styles.dateText}>
-                Publié le {new Date(post.createdAt).toLocaleDateString("fr-FR")}
+                Publié le{" "}
+                {post.createdAt
+                  ? new Date(post.createdAt).toLocaleDateString("fr-FR")
+                  : "Date inconnue"}
               </Text>
             </View>
           </View>
 
           {/* Contenu */}
-          <Text style={styles.titre}>{post.titre}</Text>
+          {post.titre && <Text style={styles.titre}>{post.titre}</Text>}
           {post.description && (
             <Text style={styles.description}>{post.description}</Text>
           )}
@@ -477,20 +546,32 @@ export default function PostDetail() {
             </View>
           )}
 
+          {/* ✅ Infos VENTE */}
+          {post.type === "vente" && post.prix && (
+            <View style={styles.venteInfo}>
+              <Text style={styles.prixText}>{post.prix} MAD</Text>
+            </View>
+          )}
+
           {/* ✅ Images */}
           {post.images && post.images.length > 0 && (
             <View style={styles.imagesContainer}>
-              {post.images.map((image, index) => (
-                <Image
-                  key={image.public_id || index}
-                  source={{ uri: image.url }}
-                  style={[
-                    styles.postImage,
-                    post.images.length === 1 && styles.singleImage,
-                  ]}
-                  resizeMode="cover"
-                />
-              ))}
+              {post.images.map((image, index) => {
+                const imageUrl = getImageUrl(image);
+                if (!imageUrl) return null;
+
+                return (
+                  <Image
+                    key={image?.public_id || index}
+                    source={{ uri: imageUrl }}
+                    style={[
+                      styles.postImage,
+                      post.images.length === 1 && styles.singleImage,
+                    ]}
+                    resizeMode="cover"
+                  />
+                );
+              })}
             </View>
           )}
 
@@ -508,12 +589,14 @@ export default function PostDetail() {
 
               <View style={styles.actionBtn}>
                 <FontAwesome name="comment-o" size={20} color="#666" />
-                <Text style={styles.number}>{post.commentsCount || 0}</Text>
+                <Text style={styles.number}>
+                  {post.commentsCount || safeComments.length || 0}
+                </Text>
               </View>
             </View>
           )}
 
-          {/* ✅ Message si en attente ou rejeté */}
+          {/* ✅ Message si en attente */}
           {isPending && (
             <View style={styles.pendingContainer}>
               <Ionicons name="time" size={20} color="#856404" />
@@ -521,11 +604,14 @@ export default function PostDetail() {
             </View>
           )}
 
-          {isRejected && post.rejectionReason && (
+          {/* ✅ Message si rejeté */}
+          {isRejected && (
             <View style={styles.rejectedContainer}>
               <Ionicons name="close-circle" size={20} color="#721c24" />
               <Text style={styles.rejectedText}>
-                Raison du rejet : {post.rejectionReason}
+                {post.rejectionReason
+                  ? `Raison du rejet : ${post.rejectionReason}`
+                  : "Ce post a été rejeté"}
               </Text>
             </View>
           )}
@@ -586,39 +672,40 @@ export default function PostDetail() {
                 Aucun commentaire pour le moment
               </Text>
             ) : (
-              safeComments.map((comment) => {
+              safeComments.map((comment, index) => {
                 const commentId = comment._id || comment.id;
-                const isCommentAuthor =
-                  userId &&
-                  (comment.authorId?._id === userId ||
-                    comment.authorId === userId);
+                const commentAuthorId =
+                  comment.authorId?._id || comment.authorId;
+                const isCommentAuthor = userId && commentAuthorId === userId;
                 const canDelete = isCommentAuthor || isAdmin;
+
+                const commentAvatarUrl = getAvatarUrl(comment.authorId);
+                const commentUsername =
+                  comment.authorId?.account?.username || "Anonyme";
+                const commentInitial = commentUsername.charAt(0).toUpperCase();
 
                 return (
                   <View
-                    key={commentId || Math.random()}
+                    key={commentId || `comment-${index}`}
                     style={styles.commentItem}
                   >
                     <View style={styles.commentHeader}>
-                      {comment.authorId?.account?.avatar?.secure_url ? (
+                      {commentAvatarUrl ? (
                         <Image
-                          source={{
-                            uri: comment.authorId.account.avatar.secure_url,
-                          }}
+                          source={{ uri: commentAvatarUrl }}
                           style={styles.commentAvatar}
                         />
                       ) : (
                         <View style={styles.commentAvatarPlaceholder}>
                           <Text style={styles.commentAvatarText}>
-                            {comment.authorId?.account?.username?.charAt(0) ||
-                              "?"}
+                            {commentInitial}
                           </Text>
                         </View>
                       )}
 
                       <View style={styles.commentMeta}>
                         <Text style={styles.commentAuthor}>
-                          {comment.authorId?.account?.username || "Anonyme"}
+                          {commentUsername}
                         </Text>
                         <Text style={styles.commentContent}>
                           {comment.content}
@@ -663,6 +750,25 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#fff",
   },
+  // ✅ Header fixe
+  fixedHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 15,
+    paddingVertical: 12,
+    backgroundColor: "#fff",
+    borderBottomWidth: 1,
+    borderBottomColor: "#eee",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 3,
+  },
+  scrollView: {
+    flex: 1,
+  },
   scrollContent: {
     padding: 15,
     paddingBottom: 100,
@@ -671,23 +777,23 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
+    gap: 10,
+  },
+  loadingText: {
+    color: "#666",
+    fontSize: 16,
   },
   errorContainer: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
     gap: 15,
+    padding: 20,
   },
   errorText: {
     color: "#e74c3c",
     fontSize: 16,
-  },
-  header: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 15,
-    paddingTop: 10,
+    textAlign: "center",
   },
   backBtn: {
     flexDirection: "row",
@@ -766,10 +872,15 @@ const styles = StyleSheet.create({
   },
   avatarInfo: {
     gap: 2,
+    flex: 1,
   },
   username: {
     fontWeight: "600",
     fontSize: 14,
+  },
+  locationText: {
+    color: "#666",
+    fontSize: 12,
   },
   dateText: {
     color: "#999",
@@ -804,6 +915,17 @@ const styles = StyleSheet.create({
     padding: 12,
     gap: 8,
     marginBottom: 15,
+  },
+  venteInfo: {
+    backgroundColor: "#e3f2fd",
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 15,
+  },
+  prixText: {
+    fontSize: 18,
+    fontWeight: "bold",
+    color: "#0d7dca",
   },
   infoRow: {
     flexDirection: "row",

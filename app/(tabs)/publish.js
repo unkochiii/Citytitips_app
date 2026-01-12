@@ -26,34 +26,7 @@ const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const DRAWER_WIDTH = SCREEN_WIDTH * 0.75;
 
 // ✅ Liste des villes valides (doit correspondre au backend)
-const VALID_CITIES = [
-  "Tanger",
-  "Tétouan",
-  "Casablanca",
-  "Rabat",
-  "Marrakech",
-  "Fès",
-  "Meknès",
-  "Agadir",
-  "Oujda",
-  "Kenitra",
-  "El Jadida",
-  "Safi",
-  "Mohammedia",
-  "Khouribga",
-  "Béni Mellal",
-  "Nador",
-  "Taza",
-  "Settat",
-  "Berrechid",
-  "Khemisset",
-  "Larache",
-  "Ksar El Kebir",
-  "Guelmim",
-  "Errachidia",
-  "Ouarzazate",
-  "Thue & Mue",
-];
+const VALID_CITIES = ["Tanger", "Thue & Mue"];
 
 export default function Publish() {
   const router = useRouter();
@@ -81,6 +54,10 @@ export default function Publish() {
   const userRoles = user?.roles || [];
   const isAdmin =
     userRoles.includes("admin") || userRoles.includes("superAdmin");
+
+  // ✅ NOUVEAU : Vérification du rôle commerce
+  const isCommerce =
+    userRoles.includes("commerce") || user?.role === "commerce";
 
   // ✅ CORRECTION : Redirection dans useEffect (pas pendant le rendu)
   useEffect(() => {
@@ -428,6 +405,11 @@ export default function Publish() {
               <Text style={styles.adminBadgeText}>Admin</Text>
             </View>
           )}
+          {isCommerce && !isAdmin && (
+            <View style={[styles.adminBadge, { backgroundColor: "#10b981" }]}>
+              <Text style={styles.adminBadgeText}>Commerce</Text>
+            </View>
+          )}
         </View>
       </View>
 
@@ -752,6 +734,7 @@ export default function Publish() {
           </View>
 
           <ScrollView style={styles.drawerContent}>
+            {/* Profil */}
             <TouchableOpacity
               style={styles.drawerItem}
               onPress={() => {
@@ -764,6 +747,7 @@ export default function Publish() {
               <Ionicons name="chevron-forward" size={20} color="#999" />
             </TouchableOpacity>
 
+            {/* Paramètres */}
             <TouchableOpacity
               style={styles.drawerItem}
               onPress={() => {
@@ -778,6 +762,30 @@ export default function Publish() {
 
             <View style={styles.drawerSeparator} />
 
+            {/* ✅ NOUVEAU : Section Commerce (si rôle commerce) */}
+            {isCommerce && (
+              <>
+                <Text style={styles.drawerSectionTitle}>Mon Commerce</Text>
+
+                <TouchableOpacity
+                  style={styles.drawerItem}
+                  onPress={() => {
+                    closeMenu();
+                    router.push("/commerce/dashboard");
+                  }}
+                >
+                  <Ionicons name="stats-chart" size={24} color="#10b981" />
+                  <Text style={[styles.drawerItemText, { color: "#10b981" }]}>
+                    Dashboard
+                  </Text>
+                  <Ionicons name="chevron-forward" size={20} color="#10b981" />
+                </TouchableOpacity>
+
+                <View style={styles.drawerSeparator} />
+              </>
+            )}
+
+            {/* Section Admin (si admin) */}
             {isAdmin && (
               <>
                 <Text style={styles.drawerSectionTitle}>Administration</Text>
@@ -832,6 +840,7 @@ export default function Publish() {
               </>
             )}
 
+            {/* À propos */}
             <TouchableOpacity
               style={styles.drawerItem}
               onPress={() => {
@@ -848,6 +857,7 @@ export default function Publish() {
               <Ionicons name="chevron-forward" size={20} color="#999" />
             </TouchableOpacity>
 
+            {/* Aide */}
             <TouchableOpacity
               style={styles.drawerItem}
               onPress={() => {
@@ -918,7 +928,7 @@ const styles = StyleSheet.create({
     color: "#333",
   },
   headerRight: {
-    width: 50,
+    width: 70,
     alignItems: "flex-end",
   },
   adminBadge: {

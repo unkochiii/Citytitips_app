@@ -56,34 +56,21 @@ export default function TabsLayout() {
         }}
       />
 
-      {/* ✅ Cache la page post/[id] de la tab bar */}
-      <Tabs.Screen
-        name="post/[id]"
-        options={{
-          href: null,
-        }}
-      />
+      {/* Routes post cachées */}
+      <Tabs.Screen name="post/[id]" options={{ href: null }} />
+      <Tabs.Screen name="post/[id]/edit" options={{ href: null }} />
 
-      {/* ✅ Cache la page post/[id]/edit de la tab bar */}
-      <Tabs.Screen
-        name="post/[id]/edit"
-        options={{
-          href: null,
-        }}
-      />
-
+      {/* ❌ SUPPRIMEZ CES LIGNES - elles sont gérées par commerce/_layout.js */}
+      {/* 
       <Tabs.Screen
         name="commerce/create"
-        options={{
-          href: null,
-        }}
+        options={{ href: null }}
       />
       <Tabs.Screen
         name="commerce/[id]"
-        options={{
-          href: null,
-        }}
+        options={{ href: null }}
       />
+      */}
     </Tabs>
   );
 }

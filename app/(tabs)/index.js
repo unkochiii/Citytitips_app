@@ -39,28 +39,23 @@ export default function Home() {
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
 
-  const MaPage = () => {
-    const { user, token } = useAuth();
-
-    // 👇 COPIE-COLLE CE LOG
-    console.log("========== DEBUG USER ==========");
-    console.log("User complet:", JSON.stringify(user, null, 2));
-    console.log("Token existe:", !!token);
-    console.log("================================");
-
-    // ...
-  };
   // ✅ State pour le menu burger
   const [menuVisible, setMenuVisible] = useState(false);
   const [slideAnim] = useState(new Animated.Value(-DRAWER_WIDTH));
 
-  // ✅ CORRECTION : Adapter à la vraie structure (préférence au flag du contexte)
+  // ✅ Vérification des rôles
   const isAdmin =
     ctxIsAdmin || user?.roles?.includes?.("admin") || user?.role === "admin";
+
   const isSuperAdmin =
     ctxIsSuperAdmin ||
     user?.roles?.includes?.("superAdmin") ||
     user?.role === "superAdmin";
+
+  // ✅ NOUVEAU : Vérification du rôle commerce
+  const isCommerce =
+    user?.roles?.includes?.("commerce") || user?.role === "commerce";
+
   const userCity = user?.city || "";
 
   // ✅ Ouvrir le menu
@@ -108,7 +103,6 @@ export default function Home() {
     try {
       setIsLoading(true);
 
-      // ✅ Accéder à user?.city directement ICI (pas via userCity)
       const cityParam = user?.city || "";
 
       console.log("Ville envoyée:", cityParam);
@@ -125,7 +119,6 @@ export default function Home() {
 
       console.log("✅ Réponse reçue");
 
-      // ✅ Accéder à response.data.data
       const apiData = response.data.data;
 
       console.log("Posts trouvés:", apiData?.posts?.length);
@@ -138,11 +131,10 @@ export default function Home() {
       console.log("🏁 Fetch terminé");
       setIsLoading(false);
     }
-  }, [token, user?.city]); // ✅ user?.city au lieu de userCity
+  }, [token, user?.city]);
 
   useEffect(() => {
     if (token && user) {
-      // ✅ Attendre que user soit chargé
       fetchData();
     }
   }, [token, user, fetchData]);
@@ -204,7 +196,6 @@ export default function Home() {
     }
   };
 
-  // ✅ NOUVEAU : Fonction pour supprimer un post (Admin seulement)
   const handleDeletePost = (postId, postTitle) => {
     Alert.alert(
       "Supprimer la publication",
@@ -223,7 +214,6 @@ export default function Home() {
                 }
               );
 
-              // Mettre à jour la liste localement
               setData((prev) => ({
                 ...prev,
                 posts: prev.posts.filter((post) => post._id !== postId),
@@ -278,13 +268,17 @@ export default function Home() {
 
         <Text style={styles.headerTitle}>Accueil</Text>
 
-        {/* Placeholder pour équilibrer le header */}
         <View style={styles.headerRight}>
-          {isAdmin ? (
+          {isAdmin && (
             <View style={styles.adminBadge}>
               <Text style={styles.adminBadgeText}>Admin</Text>
             </View>
-          ) : null}
+          )}
+          {isCommerce && !isAdmin && (
+            <View style={[styles.adminBadge, { backgroundColor: "#10b981" }]}>
+              <Text style={styles.adminBadgeText}>Commerce</Text>
+            </View>
+          )}
         </View>
       </View>
 
@@ -314,12 +308,12 @@ export default function Home() {
         </View>
 
         {/* Message si aucun post */}
-        {filteredPosts.length === 0 ? (
+        {filteredPosts.length === 0 && (
           <View style={styles.noResults}>
             <Ionicons name="sad-outline" size={50} color="#999" />
             <Text style={styles.noResultsText}>Aucun post disponible</Text>
           </View>
-        ) : null}
+        )}
 
         {/* Posts */}
         {filteredPosts.map((post) => (
@@ -339,21 +333,18 @@ export default function Home() {
                   ]}
                 />
                 <Text style={styles.postType}>{post.type}</Text>
-                {post.isPinned ? (
+                {post.isPinned && (
                   <View style={styles.pinnedBadge}>
                     <Ionicons name="pin" size={12} color="#007bff" />
                     <Text style={styles.pinnedText}>Épinglé</Text>
                   </View>
-                ) : null}
+                )}
               </View>
 
-              {/* ✅ NOUVEAU : Bouton supprimer pour admin */}
               <View style={styles.sousHeaderRight}>
-                {post.city ? (
-                  <Text style={styles.postCity}>{post.city}</Text>
-                ) : null}
+                {post.city && <Text style={styles.postCity}>{post.city}</Text>}
 
-                {isAdmin ? (
+                {isAdmin && (
                   <TouchableOpacity
                     style={styles.deleteBtn}
                     onPress={(e) => {
@@ -363,7 +354,7 @@ export default function Home() {
                   >
                     <Ionicons name="trash-outline" size={18} color="#e74c3c" />
                   </TouchableOpacity>
-                ) : null}
+                )}
               </View>
             </View>
 
@@ -396,8 +387,8 @@ export default function Home() {
             {/* Titre */}
             <Text style={styles.titre}>{post.titre}</Text>
 
-            {/* Contenu - max 1 ligne avec "..." */}
-            {post.content ? (
+            {/* Contenu */}
+            {post.content && (
               <Text
                 style={styles.content}
                 numberOfLines={1}
@@ -405,16 +396,16 @@ export default function Home() {
               >
                 {post.content}
               </Text>
-            ) : null}
+            )}
 
             {/* Image preview */}
-            {post.images?.[0]?.url ? (
+            {post.images?.[0]?.url && (
               <Image
                 source={{ uri: post.images[0].url }}
                 style={styles.postPreview}
                 resizeMode="cover"
               />
-            ) : null}
+            )}
 
             {/* Interactions */}
             <View style={styles.interaction}>
@@ -441,7 +432,6 @@ export default function Home() {
           </TouchableOpacity>
         ))}
 
-        {/* Espace en bas pour la tab bar */}
         <View style={styles.bottomSpacer} />
       </ScrollView>
 
@@ -452,10 +442,8 @@ export default function Home() {
         animationType="none"
         onRequestClose={closeMenu}
       >
-        {/* Overlay sombre */}
         <Pressable style={styles.overlay} onPress={closeMenu} />
 
-        {/* Panneau latéral */}
         <Animated.View
           style={[styles.drawer, { transform: [{ translateX: slideAnim }] }]}
         >
@@ -514,11 +502,33 @@ export default function Home() {
               <Ionicons name="chevron-forward" size={20} color="#999" />
             </TouchableOpacity>
 
-            {/* Séparateur */}
             <View style={styles.drawerSeparator} />
 
+            {/* ✅ NOUVEAU : Section Commerce (si rôle commerce) */}
+            {isCommerce && (
+              <>
+                <Text style={styles.drawerSectionTitle}>Mon Commerce</Text>
+
+                <TouchableOpacity
+                  style={styles.drawerItem}
+                  onPress={() => {
+                    closeMenu();
+                    router.push("/commerce/dashboard");
+                  }}
+                >
+                  <Ionicons name="stats-chart" size={24} color="#10b981" />
+                  <Text style={[styles.drawerItemText, { color: "#10b981" }]}>
+                    Dashboard
+                  </Text>
+                  <Ionicons name="chevron-forward" size={20} color="#10b981" />
+                </TouchableOpacity>
+
+                <View style={styles.drawerSeparator} />
+              </>
+            )}
+
             {/* Section Admin (si admin) */}
-            {isAdmin ? (
+            {isAdmin && (
               <>
                 <Text style={styles.drawerSectionTitle}>Administration</Text>
 
@@ -570,7 +580,7 @@ export default function Home() {
 
                 <View style={styles.drawerSeparator} />
               </>
-            ) : null}
+            )}
 
             {/* À propos */}
             <TouchableOpacity
@@ -603,7 +613,7 @@ export default function Home() {
             </TouchableOpacity>
           </ScrollView>
 
-          {/* Footer du menu - Déconnexion */}
+          {/* Footer du menu */}
           <View style={styles.drawerFooter}>
             <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
               <Ionicons name="log-out-outline" size={24} color="#e74c3c" />
@@ -643,7 +653,7 @@ const styles = StyleSheet.create({
     color: "#333",
   },
   headerRight: {
-    width: 50,
+    width: 70,
     alignItems: "flex-end",
   },
   adminBadge: {
@@ -786,18 +796,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-  cityHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#e8f4fd",
-    padding: 10,
-    borderRadius: 10,
-    gap: 5,
-  },
-  cityHeaderText: {
-    color: "#007bff",
-    fontWeight: "600",
-  },
   searchContainer: {
     flexDirection: "row",
     alignItems: "center",
@@ -846,7 +844,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 8,
   },
-  // ✅ NOUVEAU STYLE
   sousHeaderRight: {
     flexDirection: "row",
     alignItems: "center",
@@ -880,7 +877,6 @@ const styles = StyleSheet.create({
     color: "#999",
     fontSize: 12,
   },
-  // ✅ NOUVEAU STYLE
   deleteBtn: {
     padding: 5,
     backgroundColor: "#fee",
@@ -923,12 +919,6 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     marginBottom: 5,
     color: "#333",
-  },
-  description: {
-    fontSize: 14,
-    color: "#666",
-    marginBottom: 5,
-    lineHeight: 20,
   },
   content: {
     fontSize: 13,

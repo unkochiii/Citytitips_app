@@ -8,9 +8,11 @@ import {
   Linking,
   ActivityIndicator,
   Alert,
+  TextInput,
+  Modal,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Ionicons } from "@expo/vector-icons";
 import axios from "axios";
 import { useAuth } from "../../../context/AuthContext";
@@ -18,14 +20,12 @@ import { useAuth } from "../../../context/AuthContext";
 const API_URL = "https://api--tanjablabla--t4nqvl4d28d8.code.run";
 
 export default function CommerceDetail() {
-  // ✅ CORRECTION 1: Extraction robuste de l'ID (gère les tableaux et undefined)
   const params = useLocalSearchParams();
   const id = Array.isArray(params.id) ? params.id[0] : params.id;
 
   const router = useRouter();
-  const { token } = useAuth();
+  const { token, user } = useAuth();
 
-  // ✅ CORRECTION 2: States plus descriptifs
   const [activeTab, setActiveTab] = useState("pourVous");
   const [commerce, setCommerce] = useState(null);
   const [reviews, setReviews] = useState([]);
@@ -34,7 +34,60 @@ export default function CommerceDetail() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  // ✅ CORRECTION 3: Dépendance conditionnelle - ne charge que si l'ID existe
+  // États pour les avis
+  const [reviewsLoading, setReviewsLoading] = useState(false);
+  const [reviewsPage, setReviewsPage] = useState(1);
+  const [reviewsTotal, setReviewsTotal] = useState(0);
+  const [reviewsTotalPages, setReviewsTotalPages] = useState(1);
+  const [ratingBreakdown, setRatingBreakdown] = useState({
+    1: 0,
+    2: 0,
+    3: 0,
+    4: 0,
+    5: 0,
+  });
+  const [hasUserReviewed, setHasUserReviewed] = useState(false);
+  const [userReview, setUserReview] = useState(null);
+  const [sortOption, setSortOption] = useState("recent");
+
+  // États pour le formulaire d'avis
+  const [showReviewModal, setShowReviewModal] = useState(false);
+  const [newReviewRating, setNewReviewRating] = useState(0);
+  const [newReviewTitle, setNewReviewTitle] = useState("");
+  const [newReviewContent, setNewReviewContent] = useState("");
+  const [submittingReview, setSubmittingReview] = useState(false);
+
+  // États pour la réponse du propriétaire
+  const [showReplyModal, setShowReplyModal] = useState(false);
+  const [replyingToReview, setReplyingToReview] = useState(null);
+  const [replyContent, setReplyContent] = useState("");
+  const [submittingReply, setSubmittingReply] = useState(false);
+
+  // ✅ HELPER pour extraire l'URL d'une image
+  const getImageUri = (image) => {
+    if (!image) return null;
+    if (typeof image === "string") return image;
+    if (typeof image === "object") {
+      return image.url || image.secure_url || image.uri || null;
+    }
+    return null;
+  };
+
+  // ✅ HELPER pour les headers authentifiés
+  const getAuthHeaders = useCallback(() => {
+    const headers = { "Content-Type": "application/json" };
+    const tokenValid =
+      token &&
+      token !== "null" &&
+      token !== "undefined" &&
+      String(token).trim();
+
+    if (tokenValid) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+    return headers;
+  }, [token]);
+
   useEffect(() => {
     if (id && typeof id === "string") {
       fetchCommerce();
@@ -45,49 +98,30 @@ export default function CommerceDetail() {
     }
   }, [id]);
 
+  // Charger les avis quand on change d'onglet vers "avis"
+  useEffect(() => {
+    if (activeTab === "avis" && commerce) {
+      fetchReviews();
+    }
+  }, [activeTab, commerce, sortOption]);
+
   const fetchCommerce = async () => {
     try {
       setLoading(true);
-      setError(null); // Réinitialiser l'erreur
+      setError(null);
       console.log("🚀 Fetching commerce id:", id);
 
-      // ✅ CORRECTION 4: Headers avec vérification robuste du token
-      const headers = { "Content-Type": "application/json" };
-      const tokenValid =
-        token &&
-        token !== "null" &&
-        token !== "undefined" &&
-        String(token).trim();
-
-      if (tokenValid) {
-        headers.Authorization = `Bearer ${token}`;
-        console.log("🔑 Token valide fourni");
-      } else {
-        console.log("📝 Requête anonyme (pas de token valide)");
-      }
-
-      // ✅ CORRECTION 5: Requête simple et directe
       const response = await axios.get(`${API_URL}/commerce/${id}`, {
-        headers,
+        headers: getAuthHeaders(),
         timeout: 10000,
       });
 
       console.log("📡 API Response status:", response.status);
 
-      // ✅ CORRECTION 6: Log de la structure complète pour debug
-      console.log(
-        "📦 Raw API response data:",
-        JSON.stringify(response.data, null, 2)
-      );
-
-      // ✅ CORRECTION 7: Extraction simplifiée et plus fiable
       const data = response.data || {};
-
-      // Tente différentes structures possibles
       let commerceObj =
         data.commerce || data.data?.commerce || data.data || data;
 
-      // ✅ CORRECTION 8: Vérification robuste de la validité
       const isValidCommerce =
         commerceObj &&
         (commerceObj._id ||
@@ -96,33 +130,19 @@ export default function CommerceDetail() {
           commerceObj.address);
 
       if (!isValidCommerce) {
-        console.error(
-          "❌ Commerce invalide - structure inattendue:",
-          commerceObj
-        );
-        console.error("📋 Structure complète reçue:", data);
-        setError(
-          `Structure de données invalide. Attendu: commerce ou data.commerce`
-        );
+        console.error("❌ Commerce invalide");
+        setError("Structure de données invalide.");
         setCommerce(null);
         setLoading(false);
         return;
       }
 
-      console.log(
-        "✅ Commerce valide trouvé:",
-        commerceObj.name || commerceObj._id
-      );
-
-      // ✅ CORRECTION 9: Extraction des reviews avec vérification de tableau
       const reviewsData = data.reviews || data.data?.reviews || [];
       const reviewsArr = Array.isArray(reviewsData) ? reviewsData : [];
 
-      // ✅ CORRECTION 10: Extraction des flags avec gestion des valeurs nulles
       const openNowFlag = data.isOpenNow ?? data.data?.isOpenNow ?? false;
       const ownerFlag = data.isOwner ?? data.data?.isOwner ?? false;
 
-      // ✅ CORRECTION 11: Mise à jour du compteur de vues
       const updatedCommerce = {
         ...commerceObj,
         viewsCount:
@@ -131,27 +151,20 @@ export default function CommerceDetail() {
             : commerceObj.viewsCount || 0,
       };
 
-      // ✅ CORRECTION 12: Mise à jour des states en une seule fois
       setCommerce(updatedCommerce);
       setReviews(reviewsArr);
       setIsOpenNow(Boolean(openNowFlag));
       setIsOwner(Boolean(ownerFlag));
       setLoading(false);
     } catch (err) {
-      console.error("❌ Erreur fetching commerce:", {
-        status: err.response?.status,
-        data: err.response?.data,
-        message: err.message,
-        url: `${API_URL}/commerce/${id}`,
-      });
+      console.error("❌ Erreur fetching commerce:", err.message);
 
-      // ✅ CORRECTION 13: Messages d'erreur plus précis
       if (err.response?.status === 404) {
         setError("Commerce introuvable (404)");
       } else if (err.response?.status === 401 || err.response?.status === 403) {
         setError("Accès non autorisé. Veuillez vous reconnecter.");
       } else if (err.message?.includes("timeout")) {
-        setError("Délai de connexion dépassé. Vérifiez votre réseau.");
+        setError("Délai de connexion dépassé.");
       } else {
         setError(err.response?.data?.message || "Erreur de connexion");
       }
@@ -161,16 +174,233 @@ export default function CommerceDetail() {
     }
   };
 
-  // ... (le reste du composant reste identique: fonctions de formatage et rendu)
+  // ========== FETCH REVIEWS ==========
+  const fetchReviews = async (page = 1) => {
+    if (!commerce?._id) return;
 
-  // Formater l'adresse complète
+    try {
+      setReviewsLoading(true);
+
+      const response = await axios.get(
+        `${API_URL}/commerce/${commerce._id}/reviews`,
+        {
+          headers: getAuthHeaders(),
+          params: {
+            page,
+            limit: 10,
+            sort: sortOption,
+          },
+          timeout: 10000,
+        }
+      );
+
+      const data = response.data?.data || response.data;
+
+      setReviews(data.reviews || []);
+      setReviewsTotal(data.total || 0);
+      setReviewsTotalPages(data.pages || 1);
+      setReviewsPage(data.currentPage || 1);
+      setRatingBreakdown(
+        data.ratingBreakdown || { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 }
+      );
+      setHasUserReviewed(data.hasUserReviewed || false);
+      setUserReview(data.userReview || null);
+    } catch (err) {
+      console.error("❌ Erreur fetching reviews:", err.message);
+      Alert.alert("Erreur", "Impossible de charger les avis");
+    } finally {
+      setReviewsLoading(false);
+    }
+  };
+
+  // ========== CREATE REVIEW ==========
+  const handleSubmitReview = async () => {
+    if (newReviewRating === 0) {
+      Alert.alert("Erreur", "Veuillez sélectionner une note");
+      return;
+    }
+
+    if (!token) {
+      Alert.alert(
+        "Connexion requise",
+        "Veuillez vous connecter pour laisser un avis"
+      );
+      return;
+    }
+
+    try {
+      setSubmittingReview(true);
+
+      const response = await axios.post(
+        `${API_URL}/commerce/${commerce._id}/review`,
+        {
+          rating: newReviewRating,
+          title: newReviewTitle.trim() || undefined,
+          content: newReviewContent.trim() || undefined,
+        },
+        {
+          headers: getAuthHeaders(),
+          timeout: 10000,
+        }
+      );
+
+      const data = response.data?.data || response.data;
+
+      // Mettre à jour la liste des avis
+      setReviews((prev) => [data.review, ...prev]);
+      setHasUserReviewed(true);
+      setUserReview(data.review);
+
+      // Mettre à jour la note du commerce
+      if (data.newRating) {
+        setCommerce((prev) => ({
+          ...prev,
+          rating: data.newRating,
+        }));
+      }
+
+      // Réinitialiser le formulaire
+      setNewReviewRating(0);
+      setNewReviewTitle("");
+      setNewReviewContent("");
+      setShowReviewModal(false);
+
+      Alert.alert("Succès", "Votre avis a été ajouté");
+    } catch (err) {
+      console.error(
+        "❌ Erreur submit review:",
+        err.response?.data || err.message
+      );
+
+      if (err.response?.status === 409) {
+        Alert.alert("Erreur", "Vous avez déjà laissé un avis pour ce commerce");
+        setHasUserReviewed(true);
+      } else if (err.response?.status === 403) {
+        Alert.alert(
+          "Erreur",
+          err.response?.data?.message || "Action non autorisée"
+        );
+      } else {
+        Alert.alert(
+          "Erreur",
+          err.response?.data?.message || "Impossible d'ajouter l'avis"
+        );
+      }
+    } finally {
+      setSubmittingReview(false);
+    }
+  };
+
+  // ========== DELETE REVIEW ==========
+  const handleDeleteReview = (reviewId) => {
+    Alert.alert(
+      "Supprimer l'avis",
+      "Êtes-vous sûr de vouloir supprimer votre avis ?",
+      [
+        { text: "Annuler", style: "cancel" },
+        {
+          text: "Supprimer",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              const response = await axios.delete(
+                `${API_URL}/review/${reviewId}`,
+                {
+                  headers: getAuthHeaders(),
+                  timeout: 10000,
+                }
+              );
+
+              const data = response.data?.data || response.data;
+
+              // Retirer l'avis de la liste
+              setReviews((prev) => prev.filter((r) => r._id !== reviewId));
+              setHasUserReviewed(false);
+              setUserReview(null);
+
+              // Mettre à jour la note du commerce
+              if (data.newRating) {
+                setCommerce((prev) => ({
+                  ...prev,
+                  rating: data.newRating,
+                }));
+              }
+
+              Alert.alert("Succès", "Votre avis a été supprimé");
+            } catch (err) {
+              console.error("❌ Erreur delete review:", err.message);
+              Alert.alert(
+                "Erreur",
+                err.response?.data?.message || "Impossible de supprimer l'avis"
+              );
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  // ========== REPLY TO REVIEW (Owner) ==========
+  const handleOpenReplyModal = (review) => {
+    setReplyingToReview(review);
+    setReplyContent("");
+    setShowReplyModal(true);
+  };
+
+  const handleSubmitReply = async () => {
+    if (!replyContent.trim()) {
+      Alert.alert("Erreur", "Veuillez saisir une réponse");
+      return;
+    }
+
+    try {
+      setSubmittingReply(true);
+
+      const response = await axios.post(
+        `${API_URL}/review/${replyingToReview._id}/reply`,
+        {
+          content: replyContent.trim(),
+        },
+        {
+          headers: getAuthHeaders(),
+          timeout: 10000,
+        }
+      );
+
+      const data = response.data?.data || response.data;
+
+      // Mettre à jour l'avis dans la liste
+      setReviews((prev) =>
+        prev.map((r) => (r._id === replyingToReview._id ? data.review : r))
+      );
+
+      setShowReplyModal(false);
+      setReplyingToReview(null);
+      setReplyContent("");
+
+      Alert.alert("Succès", "Votre réponse a été ajoutée");
+    } catch (err) {
+      console.error("❌ Erreur reply:", err.response?.data || err.message);
+
+      if (err.response?.status === 409) {
+        Alert.alert("Erreur", "Vous avez déjà répondu à cet avis");
+      } else {
+        Alert.alert(
+          "Erreur",
+          err.response?.data?.message || "Impossible d'ajouter la réponse"
+        );
+      }
+    } finally {
+      setSubmittingReply(false);
+    }
+  };
+
   const getFullAddress = () => {
     if (!commerce?.address) return null;
     const { street, city, postalCode } = commerce.address;
     return [street, postalCode, city].filter(Boolean).join(", ");
   };
 
-  // Formater les horaires pour l'affichage
   const formatSchedule = () => {
     if (!commerce?.schedule) return null;
 
@@ -205,7 +435,6 @@ export default function CommerceDetail() {
     });
   };
 
-  // Formater la catégorie
   const formatCategory = (category) => {
     const categories = {
       sante: "Santé",
@@ -213,8 +442,18 @@ export default function CommerceDetail() {
       beaute: "Beauté",
       services: "Services",
       restaurant: "Restaurant",
+      education: "Éducation",
     };
     return categories[category] || category;
+  };
+
+  const formatDate = (dateString) => {
+    const date = new Date(dateString);
+    return date.toLocaleDateString("fr-FR", {
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    });
   };
 
   const handleWhatsApp = () => {
@@ -244,6 +483,153 @@ export default function CommerceDetail() {
 
   const handleShare = () => {
     // Logique de partage
+  };
+
+  // ========== RENDER STAR RATING ==========
+  const renderStarRating = (
+    rating,
+    size = 16,
+    interactive = false,
+    onPress = null
+  ) => {
+    const stars = [];
+    for (let i = 1; i <= 5; i++) {
+      stars.push(
+        <Pressable
+          key={i}
+          onPress={() => interactive && onPress && onPress(i)}
+          disabled={!interactive}
+        >
+          <Ionicons
+            name={i <= rating ? "star" : "star-outline"}
+            size={size}
+            color={i <= rating ? "#FFD700" : "#ccc"}
+            style={{ marginRight: 2 }}
+          />
+        </Pressable>
+      );
+    }
+    return <View style={{ flexDirection: "row" }}>{stars}</View>;
+  };
+
+  // ========== RENDER RATING BREAKDOWN ==========
+  const renderRatingBreakdown = () => {
+    const maxCount = Math.max(...Object.values(ratingBreakdown), 1);
+
+    return (
+      <View style={styles.ratingBreakdownContainer}>
+        {[5, 4, 3, 2, 1].map((rating) => (
+          <View key={rating} style={styles.ratingBreakdownRow}>
+            <Text style={styles.ratingBreakdownLabel}>{rating}</Text>
+            <Ionicons name="star" size={12} color="#FFD700" />
+            <View style={styles.ratingBreakdownBarContainer}>
+              <View
+                style={[
+                  styles.ratingBreakdownBar,
+                  {
+                    width: `${(ratingBreakdown[rating] / maxCount) * 100}%`,
+                  },
+                ]}
+              />
+            </View>
+            <Text style={styles.ratingBreakdownCount}>
+              {ratingBreakdown[rating]}
+            </Text>
+          </View>
+        ))}
+      </View>
+    );
+  };
+
+  // ========== RENDER REVIEW ITEM ==========
+  const renderReviewItem = (review) => {
+    const isAuthor = user && review.authorId?._id === user._id;
+    const canReply = isOwner && !review.ownerResponse?.content;
+
+    return (
+      <View key={review._id} style={styles.reviewItem}>
+        <View style={styles.reviewHeader}>
+          <View style={styles.reviewAuthorContainer}>
+            {getImageUri(review.authorId?.account?.avatar) ? (
+              <Image
+                source={{ uri: getImageUri(review.authorId.account.avatar) }}
+                style={styles.reviewAuthorAvatar}
+              />
+            ) : (
+              <View style={styles.reviewAuthorAvatarPlaceholder}>
+                <Text style={styles.reviewAuthorAvatarText}>
+                  {review.authorId?.account?.username
+                    ?.charAt(0)
+                    ?.toUpperCase() || "?"}
+                </Text>
+              </View>
+            )}
+            <View style={styles.reviewAuthorInfo}>
+              <Text style={styles.reviewAuthor}>
+                {review.authorId?.account?.username || "Anonyme"}
+              </Text>
+              <Text style={styles.reviewDate}>
+                {formatDate(review.createdAt)}
+              </Text>
+            </View>
+          </View>
+          <View style={styles.reviewRating}>
+            {renderStarRating(review.rating, 14)}
+          </View>
+        </View>
+
+        {review.title && <Text style={styles.reviewTitle}>{review.title}</Text>}
+
+        {review.content && (
+          <Text style={styles.reviewText}>{review.content}</Text>
+        )}
+
+        {/* Réponse du propriétaire */}
+        {review.ownerResponse?.content && (
+          <View style={styles.ownerResponseContainer}>
+            <View style={styles.ownerResponseHeader}>
+              <Ionicons name="business" size={16} color="#4A90A4" />
+              <Text style={styles.ownerResponseLabel}>
+                Réponse du propriétaire
+              </Text>
+            </View>
+            <Text style={styles.ownerResponseText}>
+              {review.ownerResponse.content}
+            </Text>
+            {review.ownerResponse.createdAt && (
+              <Text style={styles.ownerResponseDate}>
+                {formatDate(review.ownerResponse.createdAt)}
+              </Text>
+            )}
+          </View>
+        )}
+
+        {/* Actions */}
+        <View style={styles.reviewActions}>
+          {isAuthor && (
+            <Pressable
+              style={styles.reviewActionButton}
+              onPress={() => handleDeleteReview(review._id)}
+            >
+              <Ionicons name="trash-outline" size={18} color="#F44336" />
+              <Text style={[styles.reviewActionText, { color: "#F44336" }]}>
+                Supprimer
+              </Text>
+            </Pressable>
+          )}
+
+          {canReply && (
+            <Pressable
+              style={styles.reviewActionButton}
+              onPress={() => handleOpenReplyModal(review)}
+            >
+              <Ionicons name="chatbubble-outline" size={18} color="#4A90A4" />
+              <Text style={styles.reviewActionText}>Répondre</Text>
+            </Pressable>
+          )}
+        </View>
+      </View>
+    );
   };
 
   // État de chargement
@@ -335,7 +721,6 @@ export default function CommerceDetail() {
 
         {/* Coordonnées */}
         <View style={styles.contactSection}>
-          {/* Adresse */}
           {fullAddress && (
             <View style={styles.contactRow}>
               <Ionicons name="location-outline" size={20} color="#666" />
@@ -343,7 +728,6 @@ export default function CommerceDetail() {
             </View>
           )}
 
-          {/* Téléphone */}
           {commerce.contact?.phone && (
             <Pressable style={styles.contactRow} onPress={handleCall}>
               <Ionicons name="call-outline" size={20} color="#666" />
@@ -351,7 +735,6 @@ export default function CommerceDetail() {
             </Pressable>
           )}
 
-          {/* Email */}
           {commerce.contact?.email && (
             <Pressable style={styles.contactRow} onPress={handleEmail}>
               <Ionicons name="mail-outline" size={20} color="#666" />
@@ -359,7 +742,6 @@ export default function CommerceDetail() {
             </Pressable>
           )}
 
-          {/* Website */}
           {commerce.contact?.website && (
             <Pressable style={styles.contactRow} onPress={handleWebsite}>
               <Ionicons name="globe-outline" size={20} color="#666" />
@@ -367,7 +749,6 @@ export default function CommerceDetail() {
             </Pressable>
           )}
 
-          {/* Note */}
           {commerce.rating && (
             <View style={styles.contactRow}>
               <Ionicons name="star-outline" size={20} color="#666" />
@@ -384,19 +765,23 @@ export default function CommerceDetail() {
           <View style={styles.gallery}>
             <View style={styles.galleryMain}>
               <Image
-                source={{ uri: commerce.images[0] }}
+                source={{ uri: getImageUri(commerce.images[0]) }}
                 style={styles.mainImage}
               />
             </View>
             {commerce.images.length > 1 && (
               <View style={styles.galleryThumbnails}>
-                {commerce.images.slice(1, 4).map((image, index) => (
-                  <Image
-                    key={index}
-                    source={{ uri: image }}
-                    style={styles.thumbnailImage}
-                  />
-                ))}
+                {commerce.images.slice(1, 4).map((image, index) => {
+                  const uri = getImageUri(image);
+                  if (!uri) return null;
+                  return (
+                    <Image
+                      key={index}
+                      source={{ uri }}
+                      style={styles.thumbnailImage}
+                    />
+                  );
+                })}
               </View>
             )}
           </View>
@@ -407,7 +792,7 @@ export default function CommerceDetail() {
           commerce.logo && (
             <View style={styles.logoContainer}>
               <Image
-                source={{ uri: commerce.logo }}
+                source={{ uri: getImageUri(commerce.logo) }}
                 style={styles.logo}
                 resizeMode="contain"
               />
@@ -418,7 +803,6 @@ export default function CommerceDetail() {
         <View style={styles.tabContent}>
           {activeTab === "pourVous" && (
             <View>
-              {/* Description */}
               {commerce.description && (
                 <View style={styles.section}>
                   <Text style={styles.sectionTitle}>À propos</Text>
@@ -428,7 +812,6 @@ export default function CommerceDetail() {
                 </View>
               )}
 
-              {/* Offres */}
               {commerce.offers && commerce.offers.length > 0 && (
                 <View style={styles.section}>
                   <Text style={styles.sectionTitle}>Offres</Text>
@@ -444,24 +827,151 @@ export default function CommerceDetail() {
 
           {activeTab === "avis" && (
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Avis clients</Text>
-              {reviews.length > 0 ? (
-                reviews.map((review, index) => (
-                  <View key={review._id || index} style={styles.reviewItem}>
-                    <View style={styles.reviewHeader}>
-                      <Text style={styles.reviewAuthor}>
-                        {review.authorId?.account?.username || "Anonyme"}
+              {/* En-tête des avis avec note globale */}
+              <View style={styles.reviewsHeader}>
+                <View style={styles.reviewsOverview}>
+                  <Text style={styles.reviewsAverageRating}>
+                    {commerce.rating?.average?.toFixed(1) || "0.0"}
+                  </Text>
+                  {renderStarRating(
+                    Math.round(commerce.rating?.average || 0),
+                    20
+                  )}
+                  <Text style={styles.reviewsCount}>{reviewsTotal} avis</Text>
+                </View>
+
+                {/* Breakdown des notes */}
+                {renderRatingBreakdown()}
+              </View>
+
+              {/* Options de tri */}
+              <View style={styles.sortContainer}>
+                <Text style={styles.sortLabel}>Trier par:</Text>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  style={styles.sortOptions}
+                >
+                  {[
+                    { key: "recent", label: "Récents" },
+                    { key: "oldest", label: "Anciens" },
+                    { key: "rating-high", label: "Meilleurs" },
+                    { key: "rating-low", label: "Moins bons" },
+                  ].map((option) => (
+                    <Pressable
+                      key={option.key}
+                      style={[
+                        styles.sortOption,
+                        sortOption === option.key && styles.sortOptionActive,
+                      ]}
+                      onPress={() => setSortOption(option.key)}
+                    >
+                      <Text
+                        style={[
+                          styles.sortOptionText,
+                          sortOption === option.key &&
+                            styles.sortOptionTextActive,
+                        ]}
+                      >
+                        {option.label}
                       </Text>
-                      <View style={styles.reviewRating}>
-                        <Ionicons name="star" size={14} color="#FFD700" />
-                        <Text style={styles.reviewRatingText}>
-                          {review.rating}
-                        </Text>
-                      </View>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+              </View>
+
+              {/* Bouton ajouter un avis */}
+              {!hasUserReviewed && !isOwner && token && (
+                <Pressable
+                  style={styles.addReviewButton}
+                  onPress={() => setShowReviewModal(true)}
+                >
+                  <Ionicons name="add-circle-outline" size={20} color="#fff" />
+                  <Text style={styles.addReviewButtonText}>
+                    Laisser un avis
+                  </Text>
+                </Pressable>
+              )}
+
+              {!token && (
+                <View style={styles.loginPrompt}>
+                  <Text style={styles.loginPromptText}>
+                    Connectez-vous pour laisser un avis
+                  </Text>
+                </View>
+              )}
+
+              {isOwner && (
+                <View style={styles.ownerNotice}>
+                  <Ionicons
+                    name="information-circle"
+                    size={20}
+                    color="#4A90A4"
+                  />
+                  <Text style={styles.ownerNoticeText}>
+                    Vous êtes le propriétaire de ce commerce
+                  </Text>
+                </View>
+              )}
+
+              {/* Liste des avis */}
+              {reviewsLoading ? (
+                <ActivityIndicator
+                  size="small"
+                  color="#4A90A4"
+                  style={{ marginTop: 20 }}
+                />
+              ) : reviews.length > 0 ? (
+                <View style={styles.reviewsList}>
+                  {reviews.map((review) => renderReviewItem(review))}
+
+                  {/* Pagination */}
+                  {reviewsTotalPages > 1 && (
+                    <View style={styles.pagination}>
+                      <Pressable
+                        style={[
+                          styles.paginationButton,
+                          reviewsPage === 1 && styles.paginationButtonDisabled,
+                        ]}
+                        onPress={() =>
+                          reviewsPage > 1 && fetchReviews(reviewsPage - 1)
+                        }
+                        disabled={reviewsPage === 1}
+                      >
+                        <Ionicons
+                          name="chevron-back"
+                          size={20}
+                          color={reviewsPage === 1 ? "#ccc" : "#4A90A4"}
+                        />
+                      </Pressable>
+                      <Text style={styles.paginationText}>
+                        {reviewsPage} / {reviewsTotalPages}
+                      </Text>
+                      <Pressable
+                        style={[
+                          styles.paginationButton,
+                          reviewsPage === reviewsTotalPages &&
+                            styles.paginationButtonDisabled,
+                        ]}
+                        onPress={() =>
+                          reviewsPage < reviewsTotalPages &&
+                          fetchReviews(reviewsPage + 1)
+                        }
+                        disabled={reviewsPage === reviewsTotalPages}
+                      >
+                        <Ionicons
+                          name="chevron-forward"
+                          size={20}
+                          color={
+                            reviewsPage === reviewsTotalPages
+                              ? "#ccc"
+                              : "#4A90A4"
+                          }
+                        />
+                      </Pressable>
                     </View>
-                    <Text style={styles.reviewText}>{review.comment}</Text>
-                  </View>
-                ))
+                  )}
+                </View>
               ) : (
                 <Text style={styles.noContent}>Aucun avis pour le moment</Text>
               )}
@@ -470,7 +980,6 @@ export default function CommerceDetail() {
 
           {activeTab === "details" && (
             <View>
-              {/* Description */}
               {commerce.description && (
                 <View style={styles.section}>
                   <Text style={styles.sectionTitle}>Description</Text>
@@ -480,7 +989,6 @@ export default function CommerceDetail() {
                 </View>
               )}
 
-              {/* Horaires */}
               {scheduleList && (
                 <View style={styles.section}>
                   <Text style={styles.sectionTitle}>Horaires</Text>
@@ -493,7 +1001,6 @@ export default function CommerceDetail() {
                 </View>
               )}
 
-              {/* Statistiques */}
               <View style={styles.section}>
                 <Text style={styles.sectionTitle}>Statistiques</Text>
                 <Text style={styles.statText}>
@@ -507,10 +1014,10 @@ export default function CommerceDetail() {
                   <Text style={styles.sectionTitle}>Propriétaire</Text>
 
                   <View style={styles.ownerRow}>
-                    {commerce.ownerId?.account?.avatar?.secure_url ? (
+                    {getImageUri(commerce.ownerId?.account?.avatar) ? (
                       <Image
                         source={{
-                          uri: commerce.ownerId.account.avatar.secure_url,
+                          uri: getImageUri(commerce.ownerId.account.avatar),
                         }}
                         style={styles.ownerAvatar}
                       />
@@ -578,7 +1085,7 @@ export default function CommerceDetail() {
               activeTab === "avis" && styles.activeTabText,
             ]}
           >
-            Avis
+            Avis ({commerce.rating?.count || 0})
           </Text>
         </Pressable>
         <Pressable
@@ -595,6 +1102,134 @@ export default function CommerceDetail() {
           </Text>
         </Pressable>
       </View>
+
+      {/* Modal Ajouter un avis */}
+      <Modal
+        visible={showReviewModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowReviewModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Laisser un avis</Text>
+              <Pressable
+                onPress={() => setShowReviewModal(false)}
+                style={styles.modalCloseButton}
+              >
+                <Ionicons name="close" size={24} color="#333" />
+              </Pressable>
+            </View>
+
+            <Text style={styles.modalLabel}>Votre note *</Text>
+            <View style={styles.ratingSelector}>
+              {renderStarRating(newReviewRating, 32, true, setNewReviewRating)}
+            </View>
+
+            <Text style={styles.modalLabel}>Titre (optionnel)</Text>
+            <TextInput
+              style={styles.modalInput}
+              value={newReviewTitle}
+              onChangeText={setNewReviewTitle}
+              placeholder="Résumez votre expérience"
+              maxLength={100}
+            />
+
+            <Text style={styles.modalLabel}>Votre avis (optionnel)</Text>
+            <TextInput
+              style={[styles.modalInput, styles.modalTextarea]}
+              value={newReviewContent}
+              onChangeText={setNewReviewContent}
+              placeholder="Décrivez votre expérience..."
+              multiline
+              numberOfLines={4}
+              maxLength={1000}
+            />
+
+            <Pressable
+              style={[
+                styles.modalSubmitButton,
+                (submittingReview || newReviewRating === 0) &&
+                  styles.modalSubmitButtonDisabled,
+              ]}
+              onPress={handleSubmitReview}
+              disabled={submittingReview || newReviewRating === 0}
+            >
+              {submittingReview ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <Text style={styles.modalSubmitButtonText}>Publier l'avis</Text>
+              )}
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Modal Répondre à un avis (Propriétaire) */}
+      <Modal
+        visible={showReplyModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowReplyModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Répondre à l'avis</Text>
+              <Pressable
+                onPress={() => setShowReplyModal(false)}
+                style={styles.modalCloseButton}
+              >
+                <Ionicons name="close" size={24} color="#333" />
+              </Pressable>
+            </View>
+
+            {replyingToReview && (
+              <View style={styles.replyingToContainer}>
+                <Text style={styles.replyingToLabel}>
+                  Avis de{" "}
+                  {replyingToReview.authorId?.account?.username || "Anonyme"}
+                </Text>
+                <Text style={styles.replyingToText} numberOfLines={3}>
+                  {replyingToReview.content ||
+                    replyingToReview.title ||
+                    "(Aucun contenu)"}
+                </Text>
+              </View>
+            )}
+
+            <Text style={styles.modalLabel}>Votre réponse *</Text>
+            <TextInput
+              style={[styles.modalInput, styles.modalTextarea]}
+              value={replyContent}
+              onChangeText={setReplyContent}
+              placeholder="Répondez à cet avis..."
+              multiline
+              numberOfLines={4}
+              maxLength={1000}
+            />
+
+            <Pressable
+              style={[
+                styles.modalSubmitButton,
+                (submittingReply || !replyContent.trim()) &&
+                  styles.modalSubmitButtonDisabled,
+              ]}
+              onPress={handleSubmitReply}
+              disabled={submittingReply || !replyContent.trim()}
+            >
+              {submittingReply ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <Text style={styles.modalSubmitButtonText}>
+                  Publier la réponse
+                </Text>
+              )}
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -604,8 +1239,6 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#fff",
   },
-
-  // Loading & Error
   loadingContainer: {
     flex: 1,
     justifyContent: "center",
@@ -635,8 +1268,6 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontWeight: "600",
   },
-
-  // Header
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -652,8 +1283,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 8,
   },
-
-  // Main Info
   mainInfo: {
     paddingHorizontal: 20,
     paddingTop: 10,
@@ -693,8 +1322,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#666",
   },
-
-  // WhatsApp Button
   whatsappButton: {
     backgroundColor: "#4A90A4",
     marginHorizontal: 20,
@@ -708,8 +1335,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
   },
-
-  // Contact
   contactSection: {
     paddingHorizontal: 20,
     gap: 12,
@@ -725,8 +1350,6 @@ const styles = StyleSheet.create({
     color: "#333",
     flex: 1,
   },
-
-  // Gallery
   gallery: {
     flexDirection: "row",
     paddingHorizontal: 20,
@@ -752,8 +1375,6 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     backgroundColor: "#eee",
   },
-
-  // Logo
   logoContainer: {
     paddingHorizontal: 20,
     alignItems: "center",
@@ -764,8 +1385,6 @@ const styles = StyleSheet.create({
     height: 150,
     borderRadius: 8,
   },
-
-  // Sections
   section: {
     marginBottom: 20,
   },
@@ -784,9 +1403,9 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#999",
     fontStyle: "italic",
+    textAlign: "center",
+    marginTop: 20,
   },
-
-  // Schedule
   scheduleRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -803,14 +1422,10 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#666",
   },
-
-  // Stats
   statText: {
     fontSize: 14,
     color: "#666",
   },
-
-  // Offers
   offerItem: {
     padding: 12,
     backgroundColor: "#f5f5f5",
@@ -818,39 +1433,257 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
 
-  // Reviews
-  reviewItem: {
-    padding: 12,
+  // Reviews styles
+  reviewsHeader: {
+    marginBottom: 20,
+  },
+  reviewsOverview: {
+    alignItems: "center",
+    marginBottom: 15,
+  },
+  reviewsAverageRating: {
+    fontSize: 48,
+    fontWeight: "bold",
+    color: "#333",
+  },
+  reviewsCount: {
+    fontSize: 14,
+    color: "#666",
+    marginTop: 5,
+  },
+  ratingBreakdownContainer: {
     backgroundColor: "#f9f9f9",
     borderRadius: 8,
-    marginBottom: 10,
+    padding: 15,
+  },
+  ratingBreakdownRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 8,
+  },
+  ratingBreakdownLabel: {
+    width: 20,
+    fontSize: 14,
+    color: "#666",
+    textAlign: "center",
+  },
+  ratingBreakdownBarContainer: {
+    flex: 1,
+    height: 8,
+    backgroundColor: "#e0e0e0",
+    borderRadius: 4,
+    marginHorizontal: 10,
+  },
+  ratingBreakdownBar: {
+    height: "100%",
+    backgroundColor: "#FFD700",
+    borderRadius: 4,
+  },
+  ratingBreakdownCount: {
+    width: 30,
+    fontSize: 12,
+    color: "#666",
+    textAlign: "right",
+  },
+  sortContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 15,
+  },
+  sortLabel: {
+    fontSize: 14,
+    color: "#666",
+    marginRight: 10,
+  },
+  sortOptions: {
+    flexDirection: "row",
+  },
+  sortOption: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    backgroundColor: "#f0f0f0",
+    borderRadius: 16,
+    marginRight: 8,
+  },
+  sortOptionActive: {
+    backgroundColor: "#4A90A4",
+  },
+  sortOptionText: {
+    fontSize: 12,
+    color: "#666",
+  },
+  sortOptionTextActive: {
+    color: "#fff",
+  },
+  addReviewButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#4A90A4",
+    paddingVertical: 12,
+    borderRadius: 8,
+    marginBottom: 20,
+    gap: 8,
+  },
+  addReviewButtonText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  loginPrompt: {
+    backgroundColor: "#f0f0f0",
+    padding: 15,
+    borderRadius: 8,
+    marginBottom: 20,
+  },
+  loginPromptText: {
+    fontSize: 14,
+    color: "#666",
+    textAlign: "center",
+  },
+  ownerNotice: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#e3f2fd",
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 20,
+    gap: 8,
+  },
+  ownerNoticeText: {
+    fontSize: 14,
+    color: "#4A90A4",
+    flex: 1,
+  },
+  reviewsList: {
+    gap: 15,
+  },
+  reviewItem: {
+    padding: 15,
+    backgroundColor: "#f9f9f9",
+    borderRadius: 12,
+    marginBottom: 12,
   },
   reviewHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
+    alignItems: "flex-start",
+    marginBottom: 10,
+  },
+  reviewAuthorContainer: {
+    flexDirection: "row",
     alignItems: "center",
-    marginBottom: 8,
+    flex: 1,
+  },
+  reviewAuthorAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+  },
+  reviewAuthorAvatarPlaceholder: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "#4A90A4",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  reviewAuthorAvatarText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "bold",
+  },
+  reviewAuthorInfo: {
+    marginLeft: 10,
+    flex: 1,
   },
   reviewAuthor: {
     fontWeight: "600",
     color: "#333",
+    fontSize: 14,
+  },
+  reviewDate: {
+    fontSize: 12,
+    color: "#999",
+    marginTop: 2,
   },
   reviewRating: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
   },
-  reviewRatingText: {
-    fontSize: 14,
-    color: "#666",
+  reviewTitle: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#333",
+    marginBottom: 8,
   },
   reviewText: {
     fontSize: 14,
     color: "#666",
     lineHeight: 20,
   },
-
-  // Owner
+  ownerResponseContainer: {
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: "#e0e0e0",
+    backgroundColor: "#fff",
+    padding: 12,
+    borderRadius: 8,
+  },
+  ownerResponseHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 8,
+    gap: 6,
+  },
+  ownerResponseLabel: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#4A90A4",
+  },
+  ownerResponseText: {
+    fontSize: 14,
+    color: "#666",
+    lineHeight: 20,
+  },
+  ownerResponseDate: {
+    fontSize: 11,
+    color: "#999",
+    marginTop: 6,
+  },
+  reviewActions: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    marginTop: 12,
+    gap: 15,
+  },
+  reviewActionButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  reviewActionText: {
+    fontSize: 13,
+    color: "#4A90A4",
+  },
+  pagination: {
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    marginTop: 20,
+    gap: 20,
+  },
+  paginationButton: {
+    padding: 8,
+  },
+  paginationButtonDisabled: {
+    opacity: 0.5,
+  },
+  paginationText: {
+    fontSize: 14,
+    color: "#666",
+  },
   ownerRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -886,14 +1719,10 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontWeight: "600",
   },
-
-  // Tab Content
   tabContent: {
     paddingHorizontal: 20,
     paddingBottom: 100,
   },
-
-  // Bottom Tabs
   bottomTabs: {
     position: "absolute",
     bottom: 0,
@@ -921,5 +1750,89 @@ const styles = StyleSheet.create({
   activeTabText: {
     color: "#333",
     fontWeight: "600",
+  },
+
+  // Modal styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    justifyContent: "flex-end",
+  },
+  modalContent: {
+    backgroundColor: "#fff",
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: 20,
+    maxHeight: "80%",
+  },
+  modalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 20,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: "bold",
+    color: "#333",
+  },
+  modalCloseButton: {
+    padding: 4,
+  },
+  modalLabel: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#333",
+    marginBottom: 8,
+    marginTop: 12,
+  },
+  ratingSelector: {
+    alignItems: "center",
+    paddingVertical: 10,
+  },
+  modalInput: {
+    borderWidth: 1,
+    borderColor: "#ddd",
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 14,
+    color: "#333",
+  },
+  modalTextarea: {
+    height: 100,
+    textAlignVertical: "top",
+  },
+  modalSubmitButton: {
+    backgroundColor: "#4A90A4",
+    paddingVertical: 14,
+    borderRadius: 8,
+    alignItems: "center",
+    marginTop: 20,
+  },
+  modalSubmitButtonDisabled: {
+    backgroundColor: "#ccc",
+  },
+  modalSubmitButtonText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  replyingToContainer: {
+    backgroundColor: "#f5f5f5",
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 15,
+  },
+  replyingToLabel: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#666",
+    marginBottom: 6,
+  },
+  replyingToText: {
+    fontSize: 14,
+    color: "#333",
+    fontStyle: "italic",
   },
 });
