@@ -94,7 +94,7 @@ function PendingPosts() {
       console.log("🔍 Making request to /posts/pending...");
 
       const response = await axios.get(
-        "https://api--tanjablabla--t4nqvl4d28d8.code.run/posts/pending",
+        "https://site--citytitipsback--fp64tcf5fhqm.code.run/posts/pending",
         { headers }
       );
 
@@ -205,7 +205,7 @@ function PendingPosts() {
               setActionLoading(postId);
 
               await axios.put(
-                `https://api--tanjablabla--t4nqvl4d28d8.code.run/post/${postId}/approve`,
+                `https://site--citytitipsback--fp64tcf5fhqm.code.run/post/${postId}/approve`,
                 {},
                 {
                   headers: {
@@ -244,7 +244,7 @@ function PendingPosts() {
       setRejectModalVisible(false);
 
       await axios.put(
-        `https://api--tanjablabla--t4nqvl4d28d8.code.run/post/${postToReject}/reject`,
+        `https://site--citytitipsback--fp64tcf5fhqm.code.run/post/${postToReject}/reject`,
         { reason: rejectReason },
         {
           headers: {

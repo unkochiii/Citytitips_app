@@ -17,7 +17,7 @@ import { FontAwesome, Ionicons } from "@expo/vector-icons";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { KeyboardAwareScrollView } from "react-native-keyboard-aware-scroll-view";
 
-const API_URL = "https://api--tanjablabla--t4nqvl4d28d8.code.run";
+const API_URL = "https://site--citytitipsback--fp64tcf5fhqm.code.run";
 
 export default function PostDetail() {
   const { id } = useLocalSearchParams();

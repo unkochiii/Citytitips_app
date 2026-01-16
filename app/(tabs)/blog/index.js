@@ -1,81 +1,77 @@
-// app/(tabs)/index.js
+// screens/blog/BlogListScreen.jsx
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
   View,
   Text,
-  Image,
-  TextInput,
-  TouchableOpacity,
+  FlatList,
   StyleSheet,
-  ScrollView,
   RefreshControl,
   ActivityIndicator,
-  Alert,
+  TouchableOpacity,
   Modal,
   Animated,
   Dimensions,
   Pressable,
-  SafeAreaView,
+  Image,
+  Alert,
+  ScrollView,
 } from "react-native";
-import axios from "axios";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
-import { useAuth } from "../../context/AuthContext";
-import { FontAwesome, Ionicons } from "@expo/vector-icons";
+import { Ionicons, FontAwesome } from "@expo/vector-icons";
+import { useAuth } from "../../../context/AuthContext";
+import axios from "axios";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const DRAWER_WIDTH = SCREEN_WIDTH * 0.75;
+const API_BASE_URL = "https://site--citytitipsback--fp64tcf5fhqm.code.run";
 
-export default function Home() {
+export default function BlogListScreen() {
   const router = useRouter();
   const {
-    token,
     user,
+    token,
     logout,
     isAdmin: ctxIsAdmin,
     isSuperAdmin: ctxIsSuperAdmin,
   } = useAuth();
 
-  const [data, setData] = useState(null);
-  const [isLoading, setIsLoading] = useState(true);
+  // État pour les blogs
+  const [blogs, setBlogs] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [error, setError] = useState(null);
+  const [pagination, setPagination] = useState({
+    currentPage: 1,
+    totalPages: 1,
+    totalBlogs: 0,
+  });
 
-  // ✅ NOUVEAU : État pour le filtre actif
-  const [selectedFilter, setSelectedFilter] = useState("all");
-
-  // ✅ State pour le menu burger
+  // État pour le menu burger
   const [menuVisible, setMenuVisible] = useState(false);
   const [slideAnim] = useState(new Animated.Value(-DRAWER_WIDTH));
 
-  // ✅ Vérification des rôles
-  const isAdmin =
-    ctxIsAdmin || user?.roles?.includes?.("admin") || user?.roles === "admin";
+  // ✅ Vérification de l'authentification
+  const isAuthReady = useMemo(() => {
+    return !!user && !!token;
+  }, [user, token]);
 
+  // Vérification des rôles (similaire à Home)
+  const isAdmin =
+    ctxIsAdmin || user?.roles?.includes?.("admin") || user?.role === "admin";
   const isSuperAdmin =
     ctxIsSuperAdmin ||
     user?.roles?.includes?.("superAdmin") ||
     user?.roles === "superAdmin";
-
   const isCommerce =
     user?.roles?.includes?.("commerce") || user?.roles === "commerce";
+  const isBlog = user?.roles?.includes("blog") || user?.roles === "blog";
+  const userCity = useMemo(() => {
+    return user?.location?.city || user?.city || "";
+  }, [user]);
 
-  const isBlog = user?.roles?.includes?.("blog") || user?.roles === "blog";
-
-  const userCity = user?.city || "";
-
-  // ✅ Liste des filtres disponibles
-  const filters = useMemo(
-    () => [
-      { key: "all", label: "Tous", icon: "grid" },
-      { key: "event", label: "Événements", icon: "calendar" },
-      { key: "recommandation", label: "Recommandations", icon: "star" },
-      { key: "question", label: "Questions", icon: "help-circle" },
-      { key: "vente", label: "Ventes", icon: "pricetag" },
-    ],
-    []
-  );
-
-  // ✅ Ouvrir le menu
+  // ===== MENU BURGER LOGIC =====
   const openMenu = () => {
     setMenuVisible(true);
     Animated.timing(slideAnim, {
@@ -85,18 +81,14 @@ export default function Home() {
     }).start();
   };
 
-  // ✅ Fermer le menu
   const closeMenu = () => {
     Animated.timing(slideAnim, {
       toValue: -DRAWER_WIDTH,
       duration: 250,
       useNativeDriver: true,
-    }).start(() => {
-      setMenuVisible(false);
-    });
+    }).start(() => setMenuVisible(false));
   };
 
-  // ✅ Fonction de déconnexion
   const handleLogout = () => {
     Alert.alert("Déconnexion", "Voulez-vous vraiment vous déconnecter ?", [
       { text: "Annuler", style: "cancel" },
@@ -112,172 +104,296 @@ export default function Home() {
     ]);
   };
 
-  const fetchData = useCallback(async () => {
-    if (!token) return;
+  // ===== API CALLS =====
+  const fetchBlogsByCity = useCallback(
+    async (city, page = 1, limit = 10) => {
+      try {
+        if (!city) throw new Error("VILLE_UNDEFINED");
+        if (!token) throw new Error("TOKEN_MISSING");
 
-    try {
-      setIsLoading(true);
+        const url = `${API_BASE_URL}/blog/city/${encodeURIComponent(city)}`;
+        const response = await axios.get(url, {
+          headers: { Authorization: `Bearer ${token}` },
+          params: { page, limit },
+        });
 
-      const cityParam = user?.city || "";
+        return response.data;
+      } catch (error) {
+        console.error("Erreur fetchBlogsByCity:", error.message);
+        throw error;
+      }
+    },
+    [token]
+  );
 
-      const response = await axios.get(
-        "https://site--citytitipsback--fp64tcf5fhqm.code.run/posts",
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-          params: cityParam ? { city: cityParam } : {},
+  // ===== LOAD BLOGS =====
+  const loadBlogs = useCallback(
+    async (page = 1, isRefresh = false) => {
+      try {
+        if (!userCity) {
+          setError("VILLE_NON_DEFINIE");
+          setLoading(false);
+          return;
         }
-      );
 
-      setData(response.data.data);
-    } catch (error) {
-      setData({ posts: [] });
-    } finally {
-      setIsLoading(false);
-    }
-  }, [token, user?.city]);
+        setError(null);
+        if (page === 1) {
+          isRefresh ? setRefreshing(true) : setLoading(true);
+        } else {
+          setLoadingMore(true);
+        }
 
-  useEffect(() => {
-    if (token && user) {
-      fetchData();
-    }
-  }, [token, user, fetchData]);
+        const response = await fetchBlogsByCity(userCity, page, 10);
 
-  const onRefresh = useCallback(async () => {
-    setRefreshing(true);
-    await fetchData();
-    setRefreshing(false);
-  }, [fetchData]);
+        const normalizedBlogs = response.blogs.map((blog) => ({
+          ...blog,
+          _id: blog._id || blog.id,
+        }));
 
-  const filteredPosts = useMemo(() => {
-    if (!data?.posts) return [];
-    let posts = [...data.posts];
+        if (page === 1) {
+          setBlogs(normalizedBlogs);
+        } else {
+          setBlogs((prev) => [...prev, ...normalizedBlogs]);
+        }
 
-    // ✅ FILTRE PAR TYPE (NOUVEAU)
-    if (selectedFilter !== "all") {
-      posts = posts.filter((post) => post.type === selectedFilter);
-    }
-
-    // Filtrer par recherche textuelle
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase().trim();
-      posts = posts.filter((post) => {
-        return (
-          post.titre?.toLowerCase().includes(query) ||
-          post.description?.toLowerCase().includes(query) ||
-          post.content?.toLowerCase().includes(query) ||
-          post.authorId?.account?.username?.toLowerCase().includes(query)
+        setPagination(
+          response.pagination || {
+            currentPage: page,
+            totalPages: 1,
+            totalBlogs: normalizedBlogs.length,
+          }
         );
-      });
+      } catch (err) {
+        setError(err.message);
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
+        setLoadingMore(false);
+      }
+    },
+    [userCity, fetchBlogsByCity]
+  );
+
+  // ===== EFFECTS =====
+  useEffect(() => {
+    if (token && userCity) {
+      loadBlogs(1);
+    } else if (!userCity && user) {
+      setLoading(false);
+      setError("VILLE_NON_DEFINIE");
     }
+  }, [token, userCity, user, loadBlogs]);
 
-    // Trier
-    posts.sort((a, b) => {
-      if (a.isPinned && !b.isPinned) return -1;
-      if (!a.isPinned && b.isPinned) return 1;
-      return new Date(b.createdAt) - new Date(a.createdAt);
-    });
+  // ===== HANDLERS =====
+  const onRefresh = useCallback(() => {
+    loadBlogs(1, true);
+  }, [loadBlogs]);
 
-    return posts;
-  }, [data?.posts, searchQuery, selectedFilter]);
-
-  const handleLike = async (postId) => {
-    try {
-      const response = await axios.post(
-        `https://site--citytitipsback--fp64tcf5fhqm.code.run/post/${postId}/toggle-like`,
-        {},
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-
-      setData((prev) => ({
-        ...prev,
-        posts: prev.posts.map((post) =>
-          post._id === postId
-            ? {
-                ...post,
-                likesCount: response.data.likesCount,
-                hasLiked: response.data.hasLiked,
-              }
-            : post
-        ),
-      }));
-    } catch (error) {
-      console.log("Erreur like:", error);
+  const loadMore = useCallback(() => {
+    if (!loadingMore && pagination.currentPage < pagination.totalPages) {
+      loadBlogs(pagination.currentPage + 1);
     }
-  };
+  }, [loadingMore, pagination, loadBlogs]);
 
-  const handleDeletePost = (postId, postTitle) => {
-    Alert.alert(
-      "Supprimer la publication",
-      `Voulez-vous vraiment supprimer "${postTitle}" ?\n\nCette action est irréversible.`,
-      [
-        { text: "Annuler", style: "cancel" },
-        {
-          text: "Supprimer",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              await axios.delete(
-                `https://site--citytitipsback--fp64tcf5fhqm.code.run/post/${postId}`,
-                {
-                  headers: { Authorization: `Bearer ${token}` },
-                }
-              );
+  const handleBlogPress = useCallback(
+    (blog) => {
+      const blogId = blog._id || blog.id;
+      if (!blogId) {
+        console.error("❌ ERREUR: Tentative de navigation sans ID");
+        return;
+      }
+      router.push(`/blog/${blogId}`);
+    },
+    [router]
+  );
 
-              setData((prev) => ({
-                ...prev,
-                posts: prev.posts.filter((post) => post._id !== postId),
-              }));
+  const handleCreateBlog = useCallback(() => {
+    router.push("/blog/write");
+  }, [router]);
 
-              Alert.alert("Succès", "Publication supprimée avec succès");
-            } catch (error) {
-              console.log("Erreur suppression:", error);
-              Alert.alert(
-                "Erreur",
-                error.response?.data?.message ||
-                  "Impossible de supprimer la publication"
-              );
-            }
-          },
-        },
-      ]
+  // ===== RENDER ITEM (Style Home) =====
+  const renderBlogItem = ({ item: blog }) => {
+    const blogId = blog._id || blog.id;
+    const authorName = blog.author?.username || "Utilisateur";
+    const authorAvatar = blog.author?.avatar?.secure_url;
+    const blogCity = blog.city || userCity;
+
+    return (
+      <TouchableOpacity
+        style={[styles.article, blog.isPinned && styles.pinnedPost]}
+        onPress={() => handleBlogPress(blog)}
+        activeOpacity={0.8}
+      >
+        {/* Header du blog */}
+        <View style={styles.sousHeader}>
+          <View style={styles.sousHeaderLeft}>
+            <View style={[styles.light, { backgroundColor: "#0d7dca" }]} />
+            <Text style={styles.postType}>Blog</Text>
+            {blog.isPinned && (
+              <View style={styles.pinnedBadge}>
+                <Ionicons name="pin" size={12} color="#007bff" />
+                <Text style={styles.pinnedText}>Épinglé</Text>
+              </View>
+            )}
+          </View>
+
+          <View style={styles.sousHeaderRight}>
+            {blogCity && <Text style={styles.postCity}>{blogCity}</Text>}
+
+            {(isAdmin || blog.author?._id === user?._id) && (
+              <TouchableOpacity
+                style={styles.deleteBtn}
+                onPress={(e) => {
+                  e.stopPropagation();
+                  Alert.alert(
+                    "Supprimer le blog",
+                    `Voulez-vous vraiment supprimer "${blog.title}" ?`,
+                    [
+                      { text: "Annuler", style: "cancel" },
+                      {
+                        text: "Supprimer",
+                        style: "destructive",
+                        onPress: async () => {
+                          try {
+                            await axios.delete(
+                              `${API_BASE_URL}/blog/${blogId}`,
+                              {
+                                headers: { Authorization: `Bearer ${token}` },
+                              }
+                            );
+                            setBlogs((prev) =>
+                              prev.filter((b) => b._id !== blogId)
+                            );
+                          } catch (error) {
+                            Alert.alert(
+                              "Erreur",
+                              "Impossible de supprimer le blog"
+                            );
+                          }
+                        },
+                      },
+                    ]
+                  );
+                }}
+              >
+                <Ionicons name="trash-outline" size={18} color="#e74c3c" />
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
+
+        {/* Avatar et infos auteur */}
+        <View style={styles.avatar}>
+          {authorAvatar ? (
+            <Image source={{ uri: authorAvatar }} style={styles.avatarImg} />
+          ) : (
+            <View style={styles.avatarPlaceholder}>
+              <Text style={styles.avatarPlaceholderText}>
+                {authorName.charAt(0).toUpperCase()}
+              </Text>
+            </View>
+          )}
+          <View>
+            <Text style={styles.username}>{authorName}</Text>
+            <Text style={styles.dateText}>
+              {new Date(blog.createdAt).toLocaleDateString("fr-FR")}
+            </Text>
+          </View>
+        </View>
+
+        {/* Titre */}
+        <Text style={styles.titre}>{blog.title}</Text>
+
+        {/* Extrait du contenu */}
+        {blog.content && (
+          <Text style={styles.content} numberOfLines={2} ellipsizeMode="tail">
+            {blog.content}
+          </Text>
+        )}
+
+        {/* Image preview */}
+        {blog.images?.[0]?.url && (
+          <Image
+            source={{ uri: blog.images[0].url }}
+            style={styles.postPreview}
+            resizeMode="cover"
+          />
+        )}
+
+        {/* Interactions */}
+        <View style={styles.interaction}>
+          <TouchableOpacity style={styles.actionBtn}>
+            <FontAwesome name="eye" size={18} color="#666" />
+            <Text style={styles.number}>{blog.views || 0}</Text>
+          </TouchableOpacity>
+
+          <View style={styles.actionBtn}>
+            <FontAwesome name="comment-o" size={18} color="#666" />
+            <Text style={styles.number}>{blog.commentsCount || 0}</Text>
+          </View>
+        </View>
+      </TouchableOpacity>
     );
   };
 
-  const getTypeColor = (type) => {
-    switch (type) {
-      case "event":
-        return "#ffdd11";
-      case "recommandation":
-        return "#eca305";
-      case "vente":
-        return "#0d7dca";
-      case "question":
-        return "#142247";
-      default:
-        return "#999";
-    }
-  };
-
-  if (isLoading && !refreshing) {
+  // ===== RENDER =====
+  if (loading && blogs.length === 0) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#007bff" />
-        <Text>Chargement...</Text>
+        <Text>Chargement des blogs...</Text>
+      </View>
+    );
+  }
+
+  if (error && blogs.length === 0) {
+    const isAuthError = error.includes("TOKEN_") || error.includes("VILLE_");
+
+    return (
+      <View style={styles.centerContainer}>
+        <Ionicons
+          name={isAuthError ? "log-in-outline" : "alert-circle-outline"}
+          size={70}
+          color={isAuthError ? "#f39c12" : "#e74c3c"}
+        />
+        <Text style={styles.errorTitle}>
+          {isAuthError ? "Problème d'authentification" : "Erreur"}
+        </Text>
+        <Text style={styles.errorMessage}>
+          {error.includes("VILLE_NON_DEFINIE")
+            ? "Définissez une ville dans votre profil"
+            : error.includes("TOKEN_EXPIRED")
+            ? "Votre session a expiré"
+            : "Impossible de récupérer les blogs"}
+        </Text>
+
+        {isAuthError && (
+          <TouchableOpacity
+            style={styles.authBtn}
+            onPress={() => router.replace("/login")}
+          >
+            <Text style={styles.authBtnText}>Se connecter</Text>
+          </TouchableOpacity>
+        )}
+
+        {!isAuthError && (
+          <TouchableOpacity style={styles.retryBtn} onPress={onRefresh}>
+            <Text style={styles.retryBtnText}>Réessayer</Text>
+          </TouchableOpacity>
+        )}
       </View>
     );
   }
 
   return (
-    <SafeAreaView style={styles.mainContainer}>
+    <SafeAreaView style={styles.mainContainer} edges={["top"]}>
       {/* ✅ HEADER avec menu burger */}
       <View style={styles.header}>
         <TouchableOpacity onPress={openMenu} style={styles.burgerBtn}>
           <Ionicons name="menu" size={28} color="#333" />
         </TouchableOpacity>
 
-        <Text style={styles.headerTitle}>Accueil</Text>
+        <Text style={styles.headerTitle}>Blogs à {userCity}</Text>
 
         <View style={styles.headerRight}>
           {isAdmin && (
@@ -293,201 +409,45 @@ export default function Home() {
         </View>
       </View>
 
-      {/* ✅ CONTENU PRINCIPAL */}
-      <ScrollView
-        style={styles.container}
-        contentContainerStyle={styles.scrollContent}
+      {/* ✅ LISTE DES BLOGS */}
+      <FlatList
+        data={blogs}
+        renderItem={renderBlogItem}
+        keyExtractor={(item) => (item._id || item.id)?.toString()}
+        contentContainerStyle={styles.listContent}
+        showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
-      >
-        {/* Recherche */}
-        <View style={styles.searchContainer}>
-          <Ionicons name="search" size={20} color="#999" />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Rechercher..."
-            placeholderTextColor="#999"
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-          />
-          {searchQuery ? (
-            <TouchableOpacity onPress={() => setSearchQuery("")}>
-              <Ionicons name="close-circle" size={20} color="#999" />
-            </TouchableOpacity>
-          ) : null}
-        </View>
+        onEndReached={loadMore}
+        onEndReachedThreshold={0.5}
+        ListFooterComponent={
+          loadingMore ? (
+            <View style={styles.footerLoader}>
+              <ActivityIndicator size="small" color="#007bff" />
+            </View>
+          ) : null
+        }
+        ListEmptyComponent={
+          !loading && (
+            <View style={styles.noResults}>
+              <Ionicons name="newspaper-outline" size={50} color="#999" />
+              <Text style={styles.noResultsText}>Aucun blog disponible</Text>
+            </View>
+          )
+        }
+      />
 
-        {/* ✅ NOUVEAU : BARRE DE FILTRES */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={styles.filtersContainer}
-          contentContainerStyle={styles.filtersContent}
+      {/* ✅ BOUTON FLOTTANT */}
+      {isAuthReady && (
+        <TouchableOpacity
+          style={styles.fab}
+          onPress={handleCreateBlog}
+          activeOpacity={0.8}
         >
-          {filters.map((filter) => (
-            <TouchableOpacity
-              key={filter.key}
-              style={[
-                styles.filterBtn,
-                selectedFilter === filter.key && styles.filterBtnActive,
-              ]}
-              onPress={() => {
-                console.log("🔍 FILTRE changé:", filter.key);
-                setSelectedFilter(filter.key);
-              }}
-              activeOpacity={0.7}
-            >
-              <Ionicons
-                name={filter.icon}
-                size={16}
-                color={selectedFilter === filter.key ? "#fff" : "#666"}
-              />
-              <Text
-                style={[
-                  styles.filterText,
-                  selectedFilter === filter.key && styles.filterTextActive,
-                ]}
-              >
-                {filter.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-
-        {/* Message si aucun post */}
-        {filteredPosts.length === 0 && (
-          <View style={styles.noResults}>
-            <Ionicons name="sad-outline" size={50} color="#999" />
-            <Text style={styles.noResultsText}>Aucun post disponible</Text>
-          </View>
-        )}
-
-        {/* Posts */}
-        {filteredPosts.map((post) => {
-          const typeColor = getTypeColor(post.type);
-          return (
-            <TouchableOpacity
-              key={post._id}
-              style={[styles.article, post.isPinned && styles.pinnedPost]}
-              onPress={() => router.push(`/post/${post._id}`)}
-              activeOpacity={0.8}
-            >
-              {/* Header du post */}
-              <View style={styles.sousHeader}>
-                <View style={styles.sousHeaderLeft}>
-                  <View
-                    style={[styles.light, { backgroundColor: typeColor }]}
-                  />
-                  <Text style={styles.postType}>{post.type}</Text>
-                  {post.isPinned && (
-                    <View style={styles.pinnedBadge}>
-                      <Ionicons name="pin" size={12} color="#007bff" />
-                      <Text style={styles.pinnedText}>Épinglé</Text>
-                    </View>
-                  )}
-                </View>
-
-                <View style={styles.sousHeaderRight}>
-                  {post.city && (
-                    <Text style={styles.postCity}>{post.city}</Text>
-                  )}
-
-                  {isAdmin && (
-                    <TouchableOpacity
-                      style={styles.deleteBtn}
-                      onPress={(e) => {
-                        e.stopPropagation();
-                        handleDeletePost(post._id, post.titre);
-                      }}
-                    >
-                      <Ionicons
-                        name="trash-outline"
-                        size={18}
-                        color="#e74c3c"
-                      />
-                    </TouchableOpacity>
-                  )}
-                </View>
-              </View>
-
-              {/* Avatar et infos auteur */}
-              <View style={styles.avatar}>
-                {post.authorId?.account?.avatar?.secure_url ? (
-                  <Image
-                    source={{ uri: post.authorId.account.avatar.secure_url }}
-                    style={styles.avatarImg}
-                  />
-                ) : (
-                  <View style={styles.avatarPlaceholder}>
-                    <Text style={styles.avatarPlaceholderText}>
-                      {post.authorId?.account?.username
-                        ?.charAt(0)
-                        .toUpperCase() || "?"}
-                    </Text>
-                  </View>
-                )}
-                <View>
-                  <Text style={styles.username}>
-                    {post.authorId?.account?.username}
-                  </Text>
-                  <Text style={styles.dateText}>
-                    {new Date(post.createdAt).toLocaleDateString("fr-FR")}
-                  </Text>
-                </View>
-              </View>
-
-              {/* Titre */}
-              <Text style={styles.titre}>{post.titre}</Text>
-
-              {/* Contenu */}
-              {post.content && (
-                <Text
-                  style={styles.content}
-                  numberOfLines={1}
-                  ellipsizeMode="tail"
-                >
-                  {post.content}
-                </Text>
-              )}
-
-              {/* Image preview */}
-              {post.images?.[0]?.url && (
-                <Image
-                  source={{ uri: post.images[0].url }}
-                  style={styles.postPreview}
-                  resizeMode="cover"
-                />
-              )}
-
-              {/* Interactions */}
-              <View style={styles.interaction}>
-                <TouchableOpacity
-                  style={styles.actionBtn}
-                  onPress={(e) => {
-                    e.stopPropagation();
-                    handleLike(post._id);
-                  }}
-                >
-                  <FontAwesome
-                    name={post.hasLiked ? "heart" : "heart-o"}
-                    size={18}
-                    color={post.hasLiked ? "#e74c3c" : "#666"}
-                  />
-                  <Text style={styles.number}>{post.likesCount || 0}</Text>
-                </TouchableOpacity>
-
-                <View style={styles.actionBtn}>
-                  <FontAwesome name="comment-o" size={18} color="#666" />
-                  <Text style={styles.number}>{post.commentsCount || 0}</Text>
-                </View>
-              </View>
-            </TouchableOpacity>
-          );
-        })}
-
-        <View style={styles.bottomSpacer} />
-      </ScrollView>
+          <Ionicons name="add" size={28} color="#fff" />
+        </TouchableOpacity>
+      )}
 
       {/* ✅ MENU BURGER (Drawer) */}
       <Modal
@@ -579,7 +539,7 @@ export default function Home() {
               </>
             )}
 
-            {/* Section Blog */}
+            {/* Section Bog */}
             {isBlog && (
               <>
                 <Text style={styles.drawerSectionTitle}>Mes Blogs</Text>
@@ -650,7 +610,6 @@ export default function Home() {
                   </Text>
                   <Ionicons name="chevron-forward" size={20} color="#007bff" />
                 </TouchableOpacity>
-
                 <TouchableOpacity
                   style={styles.drawerItem}
                   onPress={() => {
@@ -716,12 +675,18 @@ export default function Home() {
 }
 
 const styles = StyleSheet.create({
+  // ===== CONTAINER =====
   mainContainer: {
     flex: 1,
     backgroundColor: "#fff",
   },
-  modalContainer: {
+  loadingContainer: {
     flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  modalContainer: {
+    flex: 1, // ✅ CRUCIAL : permet à l'overlay de s'étendre
   },
 
   // ===== HEADER =====
@@ -761,75 +726,18 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
   },
 
-  // ===== CONTENU =====
-  container: {
-    flex: 1,
-    backgroundColor: "#fff",
-  },
-  scrollContent: {
+  // ===== LIST =====
+  listContent: {
     padding: 15,
     gap: 15,
+    paddingBottom: 80,
   },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: "center",
+  footerLoader: {
+    paddingVertical: 20,
     alignItems: "center",
-  },
-  searchContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#f5f5f5",
-    borderRadius: 15,
-    paddingHorizontal: 15,
-    height: 45,
-    gap: 10,
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 16,
   },
 
-  // ✅ NOUVEAU : STYLES DES FILTRES
-  filtersContainer: {
-    marginTop: 10,
-  },
-  filtersContent: {
-    paddingHorizontal: 5,
-    gap: 10,
-  },
-  filterBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: "#f5f5f5",
-    borderWidth: 1,
-    borderColor: "#e0e0e0",
-  },
-  filterBtnActive: {
-    backgroundColor: "#007bff",
-    borderColor: "#007bff",
-  },
-  filterText: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: "#666",
-  },
-  filterTextActive: {
-    color: "#fff",
-  },
-
-  noResults: {
-    alignItems: "center",
-    paddingVertical: 50,
-    gap: 15,
-  },
-  noResultsText: {
-    color: "#999",
-    textAlign: "center",
-  },
+  // ===== ARTICLE (BLOG CARD) =====
   article: {
     backgroundColor: "#f5f5f5",
     borderRadius: 15,
@@ -960,15 +868,83 @@ const styles = StyleSheet.create({
     color: "#666",
     fontSize: 14,
   },
-  bottomSpacer: {
-    height: 20,
+
+  // ===== EMPTY STATE =====
+  noResults: {
+    alignItems: "center",
+    paddingVertical: 50,
+    gap: 15,
+  },
+  noResultsText: {
+    color: "#999",
+    textAlign: "center",
+  },
+  centerContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#fff",
+    paddingHorizontal: 40,
+  },
+  errorTitle: {
+    fontSize: 20,
+    fontWeight: "bold",
+    color: "#333",
+    marginTop: 16,
+  },
+  errorMessage: {
+    fontSize: 14,
+    color: "#666",
+    textAlign: "center",
+    marginTop: 8,
+  },
+  authBtn: {
+    backgroundColor: "#f39c12",
+    paddingHorizontal: 24,
+    paddingVertical: 10,
+    borderRadius: 20,
+    marginTop: 20,
+  },
+  authBtnText: {
+    color: "#fff",
+    fontWeight: "600",
+  },
+  retryBtn: {
+    backgroundColor: "#e74c3c",
+    paddingHorizontal: 24,
+    paddingVertical: 10,
+    borderRadius: 20,
+    marginTop: 20,
+  },
+  retryBtnText: {
+    color: "#fff",
+    fontWeight: "600",
+  },
+
+  // ===== FAB =====
+  fab: {
+    position: "absolute",
+    bottom: 20,
+    right: 20,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: "#2ecc71",
+    justifyContent: "center",
+    alignItems: "center",
+    elevation: 8,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4.65,
+    zIndex: 1000,
   },
 
   // ===== DRAWER =====
   overlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: "rgba(0, 0, 0, 0.5)",
-    zIndex: 1,
+    zIndex: 1, // ✅ Derrière le drawer
   },
   drawer: {
     position: "absolute",
@@ -982,7 +958,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.25,
     shadowRadius: 10,
     elevation: 10,
-    zIndex: 2,
+    zIndex: 2, // ✅ Devant l'overlay
   },
   drawerHeader: {
     flexDirection: "row",

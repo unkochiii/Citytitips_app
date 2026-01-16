@@ -29,7 +29,7 @@ import { Ionicons } from "@expo/vector-icons";
 // Constants
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const DRAWER_WIDTH = SCREEN_WIDTH * 0.75;
-const API_URL = "https://api--tanjablabla--t4nqvl4d28d8.code.run";
+const API_URL = "https://site--citytitipsback--fp64tcf5fhqm.code.run";
 
 const CATEGORIES = [
   { value: "", label: "Toutes" },
@@ -228,8 +228,8 @@ export default function Commerce() {
     if (ctxIsAdmin) return true;
     if (userRoles.includes("admin")) return true;
     if (userRoles.includes("superAdmin")) return true;
-    return user?.role === "admin";
-  }, [ctxIsAdmin, userRoles, user?.role]);
+    return user?.roles === "admin";
+  }, [ctxIsAdmin, userRoles, user?.roles]);
 
   const isSuperAdmin = useMemo(() => {
     if (ctxIsSuperAdmin) return true;
@@ -239,9 +239,11 @@ export default function Commerce() {
 
   // ✅ NOUVEAU : Vérification du rôle commerce
   const isCommerce = useMemo(() => {
-    return userRoles.includes("commerce") || user?.role === "commerce";
-  }, [userRoles, user?.role]);
-
+    return userRoles.includes("commerce") || user?.roles === "commerce";
+  }, [userRoles, user?.roles]);
+  const isBlog = useMemo(() => {
+    return userRoles.includes("blog") || user?.roles === "blog";
+  }, [userRoles, user?.roles]);
   const userCity = useMemo(
     () => user?.location?.city || user?.city || "",
     [user]
@@ -715,7 +717,7 @@ export default function Commerce() {
         <Ionicons name="add" size={30} color="#fff" />
       </TouchableOpacity>
 
-      {/* MENU BURGER */}
+      {/* ✅ MENU BURGER (Drawer) */}
       <Modal
         visible={menuVisible}
         transparent
@@ -727,6 +729,7 @@ export default function Commerce() {
         <Animated.View
           style={[styles.drawer, { transform: [{ translateX: slideAnim }] }]}
         >
+          {/* Header du menu */}
           <View style={styles.drawerHeader}>
             <View style={styles.drawerProfile}>
               {user?.avatar?.secure_url ? (
@@ -745,7 +748,7 @@ export default function Commerce() {
                 <Text style={styles.drawerUsername}>
                   {user?.username || "Utilisateur"}
                 </Text>
-                <Text style={styles.drawerEmail}>{userCity}</Text>
+                <Text style={styles.drawerEmail}>{user?.city || ""}</Text>
               </View>
             </View>
             <TouchableOpacity onPress={closeMenu}>
@@ -753,6 +756,7 @@ export default function Commerce() {
             </TouchableOpacity>
           </View>
 
+          {/* Items du menu */}
           <ScrollView style={styles.drawerContent}>
             {/* Profil */}
             <TouchableOpacity
@@ -782,25 +786,44 @@ export default function Commerce() {
 
             <View style={styles.drawerSeparator} />
 
-            {/* ✅ NOUVEAU : Section Commerce (si rôle commerce) */}
+            {/* Section Commerce */}
             {isCommerce && (
               <>
                 <Text style={styles.drawerSectionTitle}>Mon Commerce</Text>
-
                 <TouchableOpacity
                   style={styles.drawerItem}
                   onPress={() => {
                     closeMenu();
-                    router.push("/commerce/dashboard");
+                    router.push("/commerce/dashboardC");
                   }}
                 >
                   <Ionicons name="stats-chart" size={24} color="#10b981" />
                   <Text style={[styles.drawerItemText, { color: "#10b981" }]}>
-                    Dashboard
+                    Dashboard Commerce
                   </Text>
                   <Ionicons name="chevron-forward" size={20} color="#10b981" />
                 </TouchableOpacity>
+                <View style={styles.drawerSeparator} />
+              </>
+            )}
 
+            {/* Section Bog */}
+            {isBlog && (
+              <>
+                <Text style={styles.drawerSectionTitle}>Mes Blogs</Text>
+                <TouchableOpacity
+                  style={styles.drawerItem}
+                  onPress={() => {
+                    closeMenu();
+                    router.push("/blog/selector");
+                  }}
+                >
+                  <Ionicons name="stats-chart" size={24} color="#10b981" />
+                  <Text style={[styles.drawerItemText, { color: "#10b981" }]}>
+                    Dashboard Blog
+                  </Text>
+                  <Ionicons name="chevron-forward" size={20} color="#10b981" />
+                </TouchableOpacity>
                 <View style={styles.drawerSeparator} />
               </>
             )}
@@ -855,6 +878,19 @@ export default function Commerce() {
                   </Text>
                   <Ionicons name="chevron-forward" size={20} color="#007bff" />
                 </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.drawerItem}
+                  onPress={() => {
+                    closeMenu();
+                    router.push("/admin/pending-blog");
+                  }}
+                >
+                  <Ionicons name="time-outline" size={24} color="#007bff" />
+                  <Text style={[styles.drawerItemText, { color: "#007bff" }]}>
+                    Blogs en attente
+                  </Text>
+                  <Ionicons name="chevron-forward" size={20} color="#007bff" />
+                </TouchableOpacity>
 
                 <View style={styles.drawerSeparator} />
               </>
@@ -891,6 +927,7 @@ export default function Commerce() {
             </TouchableOpacity>
           </ScrollView>
 
+          {/* Footer du menu */}
           <View style={styles.drawerFooter}>
             <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
               <Ionicons name="log-out-outline" size={24} color="#e74c3c" />

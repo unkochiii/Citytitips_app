@@ -26,7 +26,7 @@ import { useRouter } from "expo-router";
 import { useAuth } from "../../context/AuthContext";
 
 // ==================== CONFIGURATION API ====================
-const API_BASE_URL = "https://api--tanjablabla--t4nqvl4d28d8.code.run";
+const API_BASE_URL = "https://site--citytitipsback--fp64tcf5fhqm.code.run";
 const { height: SCREEN_HEIGHT } = Dimensions.get("window");
 
 // ==================== CONSTANTES ====================

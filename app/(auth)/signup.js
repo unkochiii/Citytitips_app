@@ -18,7 +18,7 @@ import { KeyboardAwareScrollView } from "react-native-keyboard-aware-scroll-view
 import { Ionicons } from "@expo/vector-icons";
 
 // Configuration et constants
-const API_URL = "https://api--tanjablabla--t4nqvl4d28d8.code.run";
+const API_URL = "https://site--citytitipsback--fp64tcf5fhqm.code.run";
 const CITIES = ["Tanger", "Thue & Mue"];
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PASSWORD_MIN_LENGTH = 6;

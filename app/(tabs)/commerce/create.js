@@ -21,7 +21,7 @@ import { useRouter } from "expo-router";
 import { useAuth } from "../../../context/AuthContext";
 import { Ionicons } from "@expo/vector-icons";
 
-const API_URL = "https://api--tanjablabla--t4nqvl4d28d8.code.run";
+const API_URL = "https://site--citytitipsback--fp64tcf5fhqm.code.run";
 
 const DEFAULT_CATEGORIES = [
   { value: "sante", label: "Santé" },

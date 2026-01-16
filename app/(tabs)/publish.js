@@ -14,6 +14,7 @@ import {
   Dimensions,
   Pressable,
   ScrollView,
+  SafeAreaView, // ✅ AJOUTÉ
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import axios from "axios";
@@ -57,12 +58,12 @@ export default function Publish() {
 
   // ✅ NOUVEAU : Vérification du rôle commerce
   const isCommerce =
-    userRoles.includes("commerce") || user?.role === "commerce";
-
+    userRoles.includes("commerce") || user?.roles === "commerce";
+  const isBlog = userRoles.includes("blog") || user?.roles === "blog";
   // ✅ CORRECTION : Redirection dans useEffect (pas pendant le rendu)
   useEffect(() => {
     if (!token) {
-      router.replace("/(auth)/login");
+      router.replace("/login"); // ✅ CORRIGÉ : sans (auth)
     }
   }, [token, router]);
 
@@ -94,7 +95,7 @@ export default function Publish() {
         onPress: async () => {
           closeMenu();
           await logout();
-          router.replace("/(auth)/login");
+          router.replace("/login"); // ✅ CORRIGÉ : sans (auth)
         },
       },
     ]);
@@ -283,7 +284,6 @@ export default function Publish() {
       console.log("user.city:", user?.city);
       console.log("formData.lieu:", formData.lieu);
       console.log("derivedCity:", derivedCity);
-      console.log("==================");
 
       // ✅ Vérifier qu'on a une ville valide
       if (!derivedCity) {
@@ -298,11 +298,6 @@ export default function Publish() {
       console.log("=== DEBUG FINAL ===");
       console.log("user.city:", user?.city);
       console.log("derivedCity:", derivedCity);
-
-      // Afficher tout ce qui est dans le FormData
-      if (data._parts) {
-        console.log("FormData _parts:", JSON.stringify(data._parts, null, 2));
-      }
 
       // Ajouter la ville au FormData
       data.append("city", derivedCity);
@@ -328,7 +323,7 @@ export default function Publish() {
       console.log("==================");
 
       const response = await axios.post(
-        "https://api--tanjablabla--t4nqvl4d28d8.code.run/post",
+        "https://site--citytitipsback--fp64tcf5fhqm.code.run/post",
         data,
         {
           headers: {
@@ -377,7 +372,7 @@ export default function Publish() {
     }
   };
 
-  // ✅ CORRECTION : Afficher un loader pendant la redirection (au lieu de router.replace dans le rendu)
+  // ✅ CORRECTION : Afficher un loader pendant la redirection
   if (!token) {
     return (
       <View style={styles.loadingContainer}>
@@ -388,7 +383,8 @@ export default function Publish() {
   }
 
   return (
-    <View style={styles.mainContainer}>
+    <SafeAreaView style={styles.mainContainer}>
+      {/* ✅ CHANGÉ */}
       {/* ✅ HEADER avec menu burger */}
       <View style={styles.header}>
         <TouchableOpacity onPress={openMenu} style={styles.burgerBtn}>
@@ -412,7 +408,6 @@ export default function Publish() {
           )}
         </View>
       </View>
-
       {/* ✅ CONTENU PRINCIPAL avec KeyboardAwareScrollView */}
       <KeyboardAwareScrollView
         style={styles.container}
@@ -694,7 +689,6 @@ export default function Publish() {
           )}
         </View>
       </KeyboardAwareScrollView>
-
       {/* ✅ MENU BURGER (Drawer) */}
       <Modal
         visible={menuVisible}
@@ -707,6 +701,7 @@ export default function Publish() {
         <Animated.View
           style={[styles.drawer, { transform: [{ translateX: slideAnim }] }]}
         >
+          {/* Header du menu */}
           <View style={styles.drawerHeader}>
             <View style={styles.drawerProfile}>
               {user?.avatar?.secure_url ? (
@@ -733,6 +728,7 @@ export default function Publish() {
             </TouchableOpacity>
           </View>
 
+          {/* Items du menu */}
           <ScrollView style={styles.drawerContent}>
             {/* Profil */}
             <TouchableOpacity
@@ -762,25 +758,44 @@ export default function Publish() {
 
             <View style={styles.drawerSeparator} />
 
-            {/* ✅ NOUVEAU : Section Commerce (si rôle commerce) */}
+            {/* Section Commerce */}
             {isCommerce && (
               <>
                 <Text style={styles.drawerSectionTitle}>Mon Commerce</Text>
-
                 <TouchableOpacity
                   style={styles.drawerItem}
                   onPress={() => {
                     closeMenu();
-                    router.push("/commerce/dashboard");
+                    router.push("/commerce/dashboardC");
                   }}
                 >
                   <Ionicons name="stats-chart" size={24} color="#10b981" />
                   <Text style={[styles.drawerItemText, { color: "#10b981" }]}>
-                    Dashboard
+                    Dashboard Commerce
                   </Text>
                   <Ionicons name="chevron-forward" size={20} color="#10b981" />
                 </TouchableOpacity>
+                <View style={styles.drawerSeparator} />
+              </>
+            )}
 
+            {/* Section Bog */}
+            {isBlog && (
+              <>
+                <Text style={styles.drawerSectionTitle}>Mes Blogs</Text>
+                <TouchableOpacity
+                  style={styles.drawerItem}
+                  onPress={() => {
+                    closeMenu();
+                    router.push("/blog/selector");
+                  }}
+                >
+                  <Ionicons name="stats-chart" size={24} color="#10b981" />
+                  <Text style={[styles.drawerItemText, { color: "#10b981" }]}>
+                    Dashboard Blog
+                  </Text>
+                  <Ionicons name="chevron-forward" size={20} color="#10b981" />
+                </TouchableOpacity>
                 <View style={styles.drawerSeparator} />
               </>
             )}
@@ -794,7 +809,7 @@ export default function Publish() {
                   style={styles.drawerItem}
                   onPress={() => {
                     closeMenu();
-                    router.push("/(tabs)/admin/pending-posts");
+                    router.push("/admin/pending-posts");
                   }}
                 >
                   <Ionicons name="time-outline" size={24} color="#007bff" />
@@ -808,7 +823,7 @@ export default function Publish() {
                   style={styles.drawerItem}
                   onPress={() => {
                     closeMenu();
-                    router.push("/(tabs)/admin/users");
+                    router.push("/admin/users");
                   }}
                 >
                   <Ionicons name="people-outline" size={24} color="#007bff" />
@@ -822,7 +837,7 @@ export default function Publish() {
                   style={styles.drawerItem}
                   onPress={() => {
                     closeMenu();
-                    router.push("/(tabs)/admin/pending-commerce");
+                    router.push("/admin/pending-commerce");
                   }}
                 >
                   <Ionicons
@@ -832,6 +847,19 @@ export default function Publish() {
                   />
                   <Text style={[styles.drawerItemText, { color: "#007bff" }]}>
                     Commerces en attente
+                  </Text>
+                  <Ionicons name="chevron-forward" size={20} color="#007bff" />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.drawerItem}
+                  onPress={() => {
+                    closeMenu();
+                    router.push("/admin/pending-blog");
+                  }}
+                >
+                  <Ionicons name="time-outline" size={24} color="#007bff" />
+                  <Text style={[styles.drawerItemText, { color: "#007bff" }]}>
+                    Blogs en attente
                   </Text>
                   <Ionicons name="chevron-forward" size={20} color="#007bff" />
                 </TouchableOpacity>
@@ -871,6 +899,7 @@ export default function Publish() {
             </TouchableOpacity>
           </ScrollView>
 
+          {/* Footer du menu */}
           <View style={styles.drawerFooter}>
             <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
               <Ionicons name="log-out-outline" size={24} color="#e74c3c" />
@@ -881,12 +910,12 @@ export default function Publish() {
           </View>
         </Animated.View>
       </Modal>
-    </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  // ✅ NOUVEAU : Styles pour le loading
+  // ✅ NOUVEAU : Styles pour le loading et modalContainer
   loadingContainer: {
     flex: 1,
     justifyContent: "center",
@@ -898,6 +927,10 @@ const styles = StyleSheet.create({
     color: "#666",
     fontSize: 14,
   },
+  modalContainer: {
+    flex: 1, // ✅ CRUCIAL : permet à l'overlay de s'étendre
+  },
+
   mainContainer: {
     flex: 1,
     backgroundColor: "#fff",
@@ -912,6 +945,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
     borderBottomWidth: 1,
     borderBottomColor: "#eee",
+    zIndex: 10,
   },
   burgerBtn: {
     padding: 5,
@@ -945,6 +979,7 @@ const styles = StyleSheet.create({
   overlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: "rgba(0, 0, 0, 0.5)",
+    zIndex: 1, // ✅ Derrière le drawer
   },
   drawer: {
     position: "absolute",
@@ -958,6 +993,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.25,
     shadowRadius: 10,
     elevation: 10,
+    zIndex: 2, // ✅ Devant l'overlay
   },
   drawerHeader: {
     flexDirection: "row",

@@ -21,7 +21,7 @@ import axios from "axios";
 import { useAuth } from "../../../context/AuthContext";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
-const API_URL = "https://api--tanjablabla--t4nqvl4d28d8.code.run";
+const API_URL = "https://site--citytitipsback--fp64tcf5fhqm.code.run";
 
 // Onglets disponibles
 const TABS = [

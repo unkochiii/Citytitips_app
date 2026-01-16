@@ -56,6 +56,10 @@ export default function AdminLayout() {
         options={{ title: "Commerces en attente" }}
       />
       <Stack.Screen name="users" options={{ title: "Utilisateurs" }} />
+      <Stack.Screen
+        name="pending-blog"
+        options={{ title: "Blogs en attente" }}
+      />
     </Stack>
   );
 }

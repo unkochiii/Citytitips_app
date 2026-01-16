@@ -186,7 +186,7 @@ export const AuthProvider = ({ children }) => {
     try {
       console.log(`[${Platform.OS}] ========== REFRESH USER ==========`);
       const response = await fetch(
-        `https://api--tanjablabla--t4nqvl4d28d8.code.run/user/${user._id}`,
+        `https://site--citytitipsback--fp64tcf5fhqm.code.run/user/${user._id}`,
         {
           method: "GET",
           headers: {

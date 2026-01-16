@@ -21,7 +21,7 @@ import { FontAwesome, Ionicons } from "@expo/vector-icons";
 import back from "../assets/images/background.jpg";
 
 const { width } = Dimensions.get("window");
-const API_BASE_URL = "https://api--tanjablabla--t4nqvl4d28d8.code.run";
+const API_BASE_URL = "https://site--citytitipsback--fp64tcf5fhqm.code.run";
 
 export default function Profile() {
   const router = useRouter();

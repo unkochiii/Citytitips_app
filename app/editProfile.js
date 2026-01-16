@@ -82,7 +82,7 @@ const editProfile = () => {
 
         // Charger le profil
         const response = await axios.get(
-          "https://api--tanjablabla--t4nqvl4d28d8.code.run/profile",
+          "https://site--citytitipsback--fp64tcf5fhqm.code.run/profile",
           {
             headers: { Authorization: `Bearer ${usedToken}` },
           }
@@ -176,7 +176,7 @@ const editProfile = () => {
       }
 
       const response = await axios.put(
-        "https://api--tanjablabla--t4nqvl4d28d8.code.run/user/update",
+        "https://site--citytitipsback--fp64tcf5fhqm.code.run/user/update",
         formData,
         {
           headers: {

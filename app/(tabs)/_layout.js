@@ -29,20 +29,20 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
-        name="publish"
-        options={{
-          title: "Publier",
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="add-circle" size={size} color={color} />
-          ),
-        }}
-      />
-      <Tabs.Screen
         name="events"
         options={{
           title: "Événements",
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="calendar" size={size} color={color} />
+          ),
+        }}
+      />{" "}
+      <Tabs.Screen
+        name="publish"
+        options={{
+          title: "Publier",
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="add-circle" size={size} color={color} />
           ),
         }}
       />
@@ -55,22 +55,18 @@ export default function TabsLayout() {
           ),
         }}
       />
-
+      <Tabs.Screen
+        name="blog"
+        options={{
+          title: "Blogs",
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="newspaper-outline" size={size} color={color} />
+          ),
+        }}
+      />
       {/* Routes post cachées */}
       <Tabs.Screen name="post/[id]" options={{ href: null }} />
       <Tabs.Screen name="post/[id]/edit" options={{ href: null }} />
-
-      {/* ❌ SUPPRIMEZ CES LIGNES - elles sont gérées par commerce/_layout.js */}
-      {/* 
-      <Tabs.Screen
-        name="commerce/create"
-        options={{ href: null }}
-      />
-      <Tabs.Screen
-        name="commerce/[id]"
-        options={{ href: null }}
-      />
-      */}
     </Tabs>
   );
 }

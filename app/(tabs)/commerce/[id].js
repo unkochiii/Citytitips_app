@@ -17,7 +17,7 @@ import { Ionicons } from "@expo/vector-icons";
 import axios from "axios";
 import { useAuth } from "../../../context/AuthContext";
 
-const API_URL = "https://api--tanjablabla--t4nqvl4d28d8.code.run";
+const API_URL = "https://site--citytitipsback--fp64tcf5fhqm.code.run";
 
 export default function CommerceDetail() {
   const params = useLocalSearchParams();

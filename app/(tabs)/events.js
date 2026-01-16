@@ -15,6 +15,7 @@ import {
   Animated,
   Dimensions,
   Pressable,
+  SafeAreaView, // ✅ AJOUTÉ
 } from "react-native";
 import axios from "axios";
 import { useRouter } from "expo-router";
@@ -42,6 +43,7 @@ export default function Events() {
   // ✅ State pour le menu burger
   const [menuVisible, setMenuVisible] = useState(false);
   const [slideAnim] = useState(new Animated.Value(-DRAWER_WIDTH));
+  const isBlog = user?.roles?.includes?.("blog") || user?.role === "blog";
 
   // ✅ Vérification des rôles
   const userRoles = user?.roles || [];
@@ -102,32 +104,22 @@ export default function Events() {
     try {
       setIsLoading(true);
 
-      // ✅ Récupérer la ville de l'utilisateur
       const cityParam = user?.city || "";
 
-      console.log("🚀 Fetch events - ville:", cityParam);
-
       const response = await axios.get(
-        "https://api--tanjablabla--t4nqvl4d28d8.code.run/posts",
+        "https://site--citytitipsback--fp64tcf5fhqm.code.run/posts",
         {
           headers: {
             Authorization: `Bearer ${token}`,
           },
           params: {
-            type: "event", // ✅ Filtrer côté API (plus performant)
-            ...(cityParam && { city: cityParam }), // ✅ Envoyer la ville
+            type: "event",
+            ...(cityParam && { city: cityParam }),
           },
         }
       );
 
-      console.log("✅ Réponse reçue:", response.data.success);
-
-      // ✅ CORRECTION : Accéder à response.data.data.posts
       const apiData = response.data.data || { posts: [] };
-
-      console.log("Events trouvés:", apiData.posts?.length);
-      console.log("Ville filtrée:", apiData.filteredByCity);
-
       setData({ posts: apiData.posts || [] });
     } catch (error) {
       console.log("❌ Erreur:", error.response?.data || error.message);
@@ -135,22 +127,20 @@ export default function Events() {
     } finally {
       setIsLoading(false);
     }
-  }, [token, user?.city]); // ✅ Ajouter user?.city aux dépendances
+  }, [token, user?.city]);
 
   useEffect(() => {
     if (token) {
       fetchData();
     }
-  }, [fetchData, token]);
+  }, [token, fetchData]);
 
-  // ✅ Pull to refresh
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     await fetchData();
     setRefreshing(false);
   }, [fetchData]);
 
-  // ✅ Filtrage des posts basé sur la recherche
   const filteredPosts = useMemo(() => {
     if (!data?.posts) return [];
     if (!searchQuery.trim()) return data.posts;
@@ -180,17 +170,12 @@ export default function Events() {
     });
   }, [data?.posts, searchQuery]);
 
-  // ✅ Fonction Like
   const handleLike = async (postId) => {
     try {
       const response = await axios.post(
-        `https://api--tanjablabla--t4nqvl4d28d8.code.run/post/${postId}/toggle-like`,
+        `https://site--citytitipsback--fp64tcf5fhqm.code.run/post/${postId}/toggle-like`,
         {},
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
+        { headers: { Authorization: `Bearer ${token}` } }
       );
 
       setData((prevData) => ({
@@ -210,7 +195,6 @@ export default function Events() {
     }
   };
 
-  // ✅ Fonction Supprimer (Admin)
   const handleDeletePost = (postId) => {
     Alert.alert(
       "Confirmation",
@@ -223,12 +207,8 @@ export default function Events() {
           onPress: async () => {
             try {
               await axios.delete(
-                `https://api--tanjablabla--t4nqvl4d28d8.code.run/admin/post/${postId}`,
-                {
-                  headers: {
-                    Authorization: `Bearer ${token}`,
-                  },
-                }
+                `https://site--citytitipsback--fp64tcf5fhqm.code.run/admin/post/${postId}`,
+                { headers: { Authorization: `Bearer ${token}` } }
               );
 
               setData((prevData) => ({
@@ -236,7 +216,7 @@ export default function Events() {
                 posts: prevData.posts.filter((post) => post._id !== postId),
               }));
             } catch (error) {
-              console.log("Erreur lors de la suppression:", error);
+              console.log("Erreur:", error);
               Alert.alert(
                 "Erreur",
                 error.response?.data?.message || "Erreur lors de la suppression"
@@ -248,12 +228,10 @@ export default function Events() {
     );
   };
 
-  // ✅ Redirection si pas connecté
   if (!token) {
     return null;
   }
 
-  // ✅ Loading
   if (isLoading && !refreshing) {
     return (
       <View style={styles.loadingContainer}>
@@ -264,7 +242,8 @@ export default function Events() {
   }
 
   return (
-    <View style={styles.mainContainer}>
+    <SafeAreaView style={styles.mainContainer}>
+      {/* ✅ CHANGÉ de View à SafeAreaView */}
       {/* ✅ HEADER avec menu burger */}
       <View style={styles.header}>
         <TouchableOpacity onPress={openMenu} style={styles.burgerBtn}>
@@ -275,7 +254,6 @@ export default function Events() {
           <Text style={styles.headerTitle}>Événements</Text>
         </View>
 
-        {/* Placeholder pour équilibrer le header */}
         <View style={styles.headerRight}>
           {isAdmin && (
             <View style={styles.adminBadge}>
@@ -289,7 +267,6 @@ export default function Events() {
           )}
         </View>
       </View>
-
       {/* ✅ CONTENU PRINCIPAL */}
       <ScrollView
         style={styles.container}
@@ -314,7 +291,7 @@ export default function Events() {
             />
             <TextInput
               style={styles.searchInput}
-              placeholder="Rechercher par titre, auteur, lieu..."
+              placeholder="Rechercher..."
               placeholderTextColor="#999"
               value={searchQuery}
               onChangeText={setSearchQuery}
@@ -327,7 +304,7 @@ export default function Events() {
           </View>
           {searchQuery ? (
             <Text style={styles.searchResultsCount}>
-              {filteredPosts.length} résultat(s) trouvé(s)
+              {filteredPosts.length} résultat(s)
             </Text>
           ) : null}
         </View>
@@ -398,7 +375,7 @@ export default function Events() {
               </Text>
             ) : null}
 
-            {/* ✅ Infos spécifiques aux événements */}
+            {/* Infos spécifiques aux événements */}
             <View style={styles.eventInfo}>
               {post.lieu && (
                 <View style={styles.eventInfoRow}>
@@ -479,7 +456,6 @@ export default function Events() {
         {/* Espace en bas */}
         <View style={styles.bottomSpacer} />
       </ScrollView>
-
       {/* ✅ MENU BURGER (Drawer) */}
       <Modal
         visible={menuVisible}
@@ -487,10 +463,8 @@ export default function Events() {
         animationType="none"
         onRequestClose={closeMenu}
       >
-        {/* Overlay sombre */}
         <Pressable style={styles.overlay} onPress={closeMenu} />
 
-        {/* Panneau latéral */}
         <Animated.View
           style={[styles.drawer, { transform: [{ translateX: slideAnim }] }]}
         >
@@ -549,28 +523,46 @@ export default function Events() {
               <Ionicons name="chevron-forward" size={20} color="#999" />
             </TouchableOpacity>
 
-            {/* Séparateur */}
             <View style={styles.drawerSeparator} />
 
-            {/* ✅ NOUVEAU : Section Commerce (si rôle commerce) */}
+            {/* Section Commerce */}
             {isCommerce && (
               <>
                 <Text style={styles.drawerSectionTitle}>Mon Commerce</Text>
-
                 <TouchableOpacity
                   style={styles.drawerItem}
                   onPress={() => {
                     closeMenu();
-                    router.push("/commerce/dashboard");
+                    router.push("/commerce/dashboardC");
                   }}
                 >
                   <Ionicons name="stats-chart" size={24} color="#10b981" />
                   <Text style={[styles.drawerItemText, { color: "#10b981" }]}>
-                    Dashboard
+                    Dashboard Commerce
                   </Text>
                   <Ionicons name="chevron-forward" size={20} color="#10b981" />
                 </TouchableOpacity>
+                <View style={styles.drawerSeparator} />
+              </>
+            )}
 
+            {/* Section Bog */}
+            {isBlog && (
+              <>
+                <Text style={styles.drawerSectionTitle}>Mes Blogs</Text>
+                <TouchableOpacity
+                  style={styles.drawerItem}
+                  onPress={() => {
+                    closeMenu();
+                    router.push("/blog/selector");
+                  }}
+                >
+                  <Ionicons name="stats-chart" size={24} color="#10b981" />
+                  <Text style={[styles.drawerItemText, { color: "#10b981" }]}>
+                    Dashboard Blog
+                  </Text>
+                  <Ionicons name="chevron-forward" size={20} color="#10b981" />
+                </TouchableOpacity>
                 <View style={styles.drawerSeparator} />
               </>
             )}
@@ -625,6 +617,19 @@ export default function Events() {
                   </Text>
                   <Ionicons name="chevron-forward" size={20} color="#007bff" />
                 </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.drawerItem}
+                  onPress={() => {
+                    closeMenu();
+                    router.push("/admin/pending-blog");
+                  }}
+                >
+                  <Ionicons name="time-outline" size={24} color="#007bff" />
+                  <Text style={[styles.drawerItemText, { color: "#007bff" }]}>
+                    Blogs en attente
+                  </Text>
+                  <Ionicons name="chevron-forward" size={20} color="#007bff" />
+                </TouchableOpacity>
 
                 <View style={styles.drawerSeparator} />
               </>
@@ -661,7 +666,7 @@ export default function Events() {
             </TouchableOpacity>
           </ScrollView>
 
-          {/* Footer du menu - Déconnexion */}
+          {/* Footer du menu */}
           <View style={styles.drawerFooter}>
             <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
               <Ionicons name="log-out-outline" size={24} color="#e74c3c" />
@@ -672,7 +677,7 @@ export default function Events() {
           </View>
         </Animated.View>
       </Modal>
-    </View>
+    </SafeAreaView>
   );
 }
 
@@ -680,6 +685,9 @@ const styles = StyleSheet.create({
   mainContainer: {
     flex: 1,
     backgroundColor: "#fff",
+  },
+  modalContainer: {
+    flex: 1, // ✅ CRUCIAL : permet à l'overlay de s'étendre
   },
 
   // ✅ Header
@@ -693,6 +701,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
     borderBottomWidth: 1,
     borderBottomColor: "#eee",
+    zIndex: 10,
   },
   burgerBtn: {
     padding: 5,
@@ -728,6 +737,7 @@ const styles = StyleSheet.create({
   overlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: "rgba(0, 0, 0, 0.5)",
+    zIndex: 1, // ✅ Derrière le drawer
   },
   drawer: {
     position: "absolute",
@@ -741,6 +751,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.25,
     shadowRadius: 10,
     elevation: 10,
+    zIndex: 2, // ✅ Devant l'overlay
   },
   drawerHeader: {
     flexDirection: "row",

@@ -19,27 +19,32 @@ export default function CommerceLayout() {
       <Stack.Screen
         name="index"
         options={{
-          headerShown: false, // Le header est géré dans le composant
-          title: "Commerces",
+          headerShown: false,
+          title: "Blog",
         }}
+      />
+      <Stack.Screen
+        name="dashboardB"
+        options={{
+          title: "Dashboard blog",
+          presentation: "modal",
+        }}
+      />
+      <Stack.Screen
+        name="selector"
+        options={{ title: "Sélectionner les blogs" }}
       />
       <Stack.Screen
         name="[id]"
         options={{
-          title: "Détail du commerce",
+          title: "Détail du blog",
         }}
       />
       <Stack.Screen
-        name="create"
+        name="write"
         options={{
-          title: "Ajouter un commerce",
+          title: "Ajouter un blog",
           presentation: "modal", // Optionnel : ouvre en modal
-        }}
-      />
-      <Stack.Screen
-        name="dashboardC"
-        options={{
-          title: "Dashboard commerce",
         }}
       />
     </Stack>

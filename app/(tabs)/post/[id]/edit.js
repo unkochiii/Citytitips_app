@@ -85,7 +85,7 @@ const PostEdit = () => {
 
       try {
         const response = await axios.get(
-          `https://api--tanjablabla--t4nqvl4d28d8.code.run/post/${id}`,
+          `https://site--citytitipsback--fp64tcf5fhqm.code.run/post/${id}`,
           {
             headers: { Authorization: `Bearer ${token}` },
           }
@@ -259,7 +259,7 @@ const PostEdit = () => {
       }
 
       await axios.put(
-        `https://api--tanjablabla--t4nqvl4d28d8.code.run/post/${id}`,
+        `https://site--citytitipsback--fp64tcf5fhqm.code.run/post/${id}`,
         formData,
         {
           headers: {
